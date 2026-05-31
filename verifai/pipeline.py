@@ -76,3 +76,21 @@ def run_pipeline(github_username: str, resume_raw: str | None = None) -> Pipelin
         "current_agent": "",
     }
     return _compiled.invoke(initial)
+
+
+def stream_pipeline(github_username: str, resume_raw: str | None = None):
+    """Yield full PipelineState after each agent completes."""
+    initial: PipelineState = {
+        "github_username": github_username,
+        "resume_raw": resume_raw,
+        "resume_claims": None,
+        "github_data": None,
+        "ai_detection": None,
+        "coherence_report": None,
+        "skill_verification": None,
+        "project_matches": None,
+        "final_report": None,
+        "errors": [],
+        "current_agent": "",
+    }
+    yield from _compiled.stream(initial, stream_mode="values")

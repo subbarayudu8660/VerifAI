@@ -16,7 +16,7 @@ from core.models import GitHubScrapeResult, RepoData
 from state import PipelineState
 
 _TODAY = datetime.now(timezone.utc)
-_RECENT_DAYS = 30
+_RECENT_DAYS = 20
 
 
 def _parse_dt(s: str | None) -> datetime | None:
@@ -50,7 +50,7 @@ def _detect_flags(
     if created_at and _days_since(created_at) <= _RECENT_DAYS:
         flags.append(make_flag(
             Flag.RECENT_CREATION,
-            "Repository created within the last 30 days.",
+            "Repository created within the last 20 days.",
             f"created_at={repo['created_at']} ({_days_since(created_at)} days ago)",
         ))
 

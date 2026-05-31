@@ -54,21 +54,82 @@ def _skill_confidence(n_repos: int, total_commits: int) -> float:
     return 0.3
 
 
+_SKILL_ALIASES = {
+    "react": ["javascript", "jsx", "tsx", "react"],
+    "react native": ["javascript", "typescript", "react native"],
+    "next.js": ["javascript", "typescript", "nextjs"],
+    "node.js": ["javascript", "typescript", "node"],
+    "express": ["javascript", "typescript", "express", "node"],
+    "vue": ["javascript", "vue"],
+    "angular": ["javascript", "typescript", "angular"],
+    "javascript (es6+)": ["javascript"],
+    "typescript": ["typescript", "javascript"],
+    "langchain": ["python", "langchain"],
+    "langgraph": ["python", "langgraph"],
+    "pytorch": ["python", "pytorch", "torch"],
+    "tensorflow": ["python", "tensorflow"],
+    "scikit-learn": ["python", "scikit", "sklearn"],
+    "pandas": ["python", "pandas", "jupyter notebook"],
+    "numpy": ["python", "numpy", "jupyter notebook"],
+    "matplotlib": ["python", "matplotlib", "jupyter notebook"],
+    "huggingface transformers": ["python", "transformers", "huggingface"],
+    "peft": ["python", "peft"],
+    "mongodb": ["javascript", "typescript", "python", "mongodb"],
+    "mysql": ["python", "javascript", "sql", "mysql"],
+    "sql": ["python", "jupyter notebook", "sql"],
+    "fastapi": ["python", "fastapi"],
+    "flask": ["python", "flask"],
+    "docker": ["dockerfile", "docker", "python", "shell"],
+    "kubernetes": ["yaml", "kubernetes", "helm"],
+    "graphql": ["javascript", "typescript", "graphql"],
+    "rest apis": ["python", "javascript", "typescript"],
+    "jwt": ["javascript", "typescript", "python"],
+    "oauth 2.0": ["javascript", "typescript", "python"],
+    "websockets": ["javascript", "typescript", "python"],
+    "microservices": ["python", "javascript", "typescript"],
+    "swiftui": ["swift"],
+    "combine": ["swift"],
+    "java": ["java"],
+    "c++": ["c++", "cpp"],
+    "latex": ["tex"],
+    "pinecone (vector db)": ["python", "pinecone"],
+    "chromadb": ["python"],
+    "langsmith": ["python"],
+    "xgboost": ["python", "jupyter notebook"],
+    "lightgbm": ["python", "jupyter notebook"],
+    "beautifulsoup": ["python"],
+    "requests": ["python"],
+    "selenium": ["python"],
+    "streamlit": ["python", "streamlit"],
+    "github api": ["python", "javascript"],
+}
+
+
 def _skill_in_repo(skill_lower: str, repo: dict) -> bool:
     """Check language breakdown, README text, description, and repo name."""
-    if any(skill_lower == l.lower() for l in repo.get("languages", {})):
-        return True
-    if any(skill_lower in l.lower() for l in repo.get("languages", {})):
-        return True
+    repo_langs = [l.lower() for l in repo.get("languages", {})]
     readme = repo.get("readme_text", "").lower()
-    if readme and skill_lower in readme:
-        return True
     desc = (repo.get("description") or "").lower()
-    if skill_lower in desc:
-        return True
     name = repo["repo_name"].lower().replace("-", " ").replace("_", " ")
-    if skill_lower in name:
+
+    # Direct language match (e.g. Python, TypeScript, Swift)
+    if any(skill_lower == l for l in repo_langs):
         return True
+
+    # README/description/name direct match
+    if skill_lower in readme or skill_lower in desc or skill_lower in name:
+        return True
+
+    # Alias match — language must match AND skill keyword must appear in text
+    aliases = _SKILL_ALIASES.get(skill_lower, [])
+    skill_keywords = [skill_lower] + aliases
+
+    lang_matches = any(alias in l for alias in aliases for l in repo_langs)
+    text_confirms = any(kw in readme or kw in desc or kw in name for kw in skill_keywords)
+
+    if lang_matches and text_confirms:
+        return True
+
     return False
 
 
@@ -179,6 +240,29 @@ def _classify_unmatched(project_text: str, company_names: list[str]) -> tuple[st
     return ("CLAIM_NO_EVIDENCE", "No matching public repo found.")
 
 
+_STOPWORDS = {
+    "a", "an", "the", "and", "or", "for", "to", "in", "of", "with",
+    "on", "at", "by", "from", "as", "is", "was", "are", "were", "be",
+    "been", "has", "have", "had", "that", "this", "it", "its",
+}
+
+
+def _keyword_overlap(claim: str, repo_name: str, repo_desc: str, readme: str) -> float:
+    def keywords(text: str) -> set[str]:
+        words = re.findall(r'\b\w+\b', text.lower())
+        return {w for w in words if len(w) > 3 and w not in _STOPWORDS}
+
+    claim_words = keywords(claim)
+    repo_text = f"{repo_name} {repo_desc} {readme[:500]}".replace("-", " ").replace("_", " ")
+    repo_words = keywords(repo_text)
+
+    if not claim_words:
+        return 0.0
+
+    overlap = claim_words & repo_words
+    return len(overlap) / len(claim_words)
+
+
 def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
     project_claims = [
         c for c in claims.get("claims", [])
@@ -188,62 +272,34 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
     company_names = _company_names(claims)
     results = []
 
-    tech_hints = {
-        "ios": ["swift", "objective-c"],
-        "android": ["kotlin", "java"],
-        "ml": ["python", "jupyter notebook"],
-        "llm": ["python"],
-        "ai": ["python"],
-        "web": ["javascript", "typescript", "html", "css"],
-        "api": ["python", "javascript", "go", "ruby"],
-        "data": ["python", "r", "jupyter notebook"],
-    }
-
     for claim in project_claims:
-        project_text = claim["claim"].lower()
+        project_text = claim["claim"]
         best_match = None
         best_score = 0.0
-        best_reason = None
 
         for repo in repos:
-            score = 0.0
-            reasons = []
-            repo_words = set(
-                (repo["repo_name"] + " " + (repo.get("description") or ""))
-                .lower().replace("-", " ").replace("_", " ").split()
+            score = _keyword_overlap(
+                project_text,
+                repo["repo_name"],
+                repo.get("description") or "",
+                repo.get("readme_text") or "",
             )
-            project_words = [w for w in project_text.split() if len(w) > 3]
-
-            overlap = sum(1 for w in project_words if w in repo_words)
-            if overlap:
-                score += min(0.5, overlap * 0.15)
-                reasons.append("repo name similarity")
-
-            for hint, langs in tech_hints.items():
-                if hint in project_text:
-                    repo_langs = [l.lower() for l in repo.get("languages", {})]
-                    if any(l in repo_langs for l in langs):
-                        score += 0.25
-                        reasons.append(f"{hint} language stack matched")
-                        break
-
             if score > best_score:
                 best_score = score
                 best_match = repo["repo_name"]
-                best_reason = ", ".join(reasons) if reasons else None
 
         if best_score >= 0.25:
             results.append({
                 "claimed_project": claim["claim"],
                 "matched_repo": best_match,
                 "match_confidence": round(best_score, 2),
-                "match_reason": best_reason,
+                "match_reason": "keyword overlap",
                 "flag": None,
                 "note": None,
                 "github_username": username,
             })
         else:
-            flag, note = _classify_unmatched(project_text, company_names)
+            flag, note = _classify_unmatched(project_text.lower(), company_names)
             results.append({
                 "claimed_project": claim["claim"],
                 "matched_repo": None,

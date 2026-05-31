@@ -7,8 +7,8 @@ const FLAG_COLORS = {
 };
 
 const FLAG_LABELS = {
-  RECENT_CREATION: "New repo",
-  NO_COMMIT_HISTORY: "No history",
+  RECENT_CREATION: "Recently created",
+  NO_COMMIT_HISTORY: "No commit history",
   FORK_NO_CONTRIBUTION: "Fork",
 };
 
@@ -168,36 +168,24 @@ function SkillTable({ skills, hasResume }) {
         <thead>
           <tr>
             <th style={s.th}>Skill</th>
-            <th style={s.th}>Claimed Level</th>
             <th style={s.th}>Evidence</th>
-            <th style={s.th}>Confidence</th>
           </tr>
         </thead>
         <tbody>
-          {skills.map((sk) => {
-            const pct = Math.round(sk.confidence * 100);
-            const evidenceColor = pct >= 75 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626";
-            return (
-              <tr key={sk.skill}>
-                <td style={{ ...s.td, fontWeight: 600 }}>{sk.skill}</td>
-                <td style={{ ...s.td, color: "#6b7280" }}>{sk.claimed_level}</td>
-                <td style={s.td}>
-                  {sk.evidence_found ? (
-                    <span style={{ color: "#374151" }}>
-                      {sk.evidence_repos.length} repo{sk.evidence_repos.length !== 1 ? "s" : ""},&nbsp;
-                      {sk.total_commits_in_skill} commits
-                    </span>
-                  ) : (
-                    <span style={{ color: "#dc2626", fontStyle: "italic" }}>No evidence found</span>
-                  )}
-                </td>
-                <td style={s.td}>
-                  <span style={s.bar(pct)} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: evidenceColor }}>{pct}%</span>
-                </td>
-              </tr>
-            );
-          })}
+          {skills.map((sk) => (
+            <tr key={sk.skill}>
+              <td style={{ ...s.td, fontWeight: 600 }}>{sk.skill}</td>
+              <td style={s.td}>
+                {sk.evidence_found ? (
+                  <span style={{ color: "#374151" }}>
+                    {sk.evidence_repos.length} repo{sk.evidence_repos.length !== 1 ? "s" : ""}
+                  </span>
+                ) : (
+                  <span style={{ color: "#dc2626", fontStyle: "italic" }}>No evidence found</span>
+                )}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

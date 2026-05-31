@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
-from pipeline import run_pipeline
+from pipeline import stream_pipeline
 from state import PipelineState
 
 router = APIRouter()
@@ -26,10 +26,12 @@ class VerifyResponse(BaseModel):
 
 
 def _run_and_store(run_id: str, username: str, resume: str | None) -> None:
-    state = run_pipeline(username, resume)
-    _results[run_id] = state
-    out_file = _OUTPUTS_DIR / f"{run_id}.json"
-    out_file.write_text(json.dumps(state, indent=2, default=str))
+    state = None
+    for state in stream_pipeline(username, resume):
+        _results[run_id] = state  # live update after each agent
+    if state is not None:
+        out_file = _OUTPUTS_DIR / f"{run_id}.json"
+        out_file.write_text(json.dumps(state, indent=2, default=str))
 
 
 @router.post("/verify", response_model=VerifyResponse)
