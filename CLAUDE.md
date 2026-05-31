@@ -6,8 +6,6 @@ This is the single source of truth for all Claude Code sessions.
 
 # VerifAI — Claude Code Session Context
 
-Read this at the start of every session. Update it at the end.
-
 ---
 
 ## What VerifAI Is
@@ -29,79 +27,8 @@ Automated technical candidate verification pipeline. Given a GitHub username and
 | Backend  | https://verifai-production-d9d4.up.railway.app |
 
 **Git repo:** https://github.com/subbarayudu8660/VerifAI
-(remote uses SSH: `git@github.com:subbarayudu8660/VerifAI.git`)
-
----
-
-## 5-Agent Pipeline
-
-All agents share `PipelineState` (TypedDict in `state.py`). Each agent reads from it and writes its output back to it. The pipeline runs via LangGraph `StateGraph` in `pipeline.py`.
-
-| Agent | File | Status | What it does |
-|-------|------|--------|--------------|
-| 1 — Resume Parser | `agents/resume_parser.py` | IMPLEMENTED | Calls OpenAI to extract structured claims from raw resume text. Each claim has: `claim`, `category` (skill/project/role/education/achievement), `source_section`, `skip_github_check`, `confidence`, `raw_text`. Experience section claims are tagged `skip_github_check: true`. |
-| 2 — GitHub Scraper | `agents/github_scraper.py` | IMPLEMENTED | Fetches repos, commits, languages, contributor counts via GitHub API. Detects 5 flag types: recent creation, solo-only, first-commit-in-language, no-commit-history, fork-no-contribution. Standalone: `python -m agents.github_scraper <username>` |
-| 3 — AI Code Detector | `agents/ai_code_detector.py` | IMPLEMENTED | Samples up to 5 recent commit diffs per repo (max 3000 chars each), sends to OpenAI for AI-generation likelihood scoring. Returns qualitative signals per repo — no numeric score exposed to users. |
-| 4 — Coherence Verifier | `agents/coherence_verifier.py` | IMPLEMENTED | Scores skills against GitHub language/commit evidence, matches project claims to repos, generates interview questions. Skips experience section entirely. Skills evaluated individually. **See known issues below — skill matching is broken.** |
-| 5 — Report Generator | `agents/report_generator.py` | IMPLEMENTED | Synthesises all prior outputs into `RecruiterReport` (risk level, red flags, recommendation) and `CandidateReport` (strengths, honest feedback). Calls OpenAI for narrative synthesis. |
-
-### LangGraph conditional edge
-If `github_data is None` after Agent 2 (API failure), Agents 3 and 4 are skipped entirely.
-
----
-
-## Full File Structure
-
-```
-verifAI/                          ← project root (CLAUDE.md lives here)
-└── verifai/                      ← git root (git@github.com:subbarayudu8660/VerifAI.git)
-    ├── main.py                   ← FastAPI entrypoint (wiring only, no business logic)
-    ├── pipeline.py               ← LangGraph StateGraph (wiring only)
-    ├── state.py                  ← PipelineState TypedDict
-    ├── requirements.txt
-    ├── .env                      ← local secrets (gitignored)
-    ├── .env.example
-    ├── .gitignore
-    ├── agents/
-    │   ├── resume_parser.py      ← Agent 1
-    │   ├── github_scraper.py     ← Agent 2
-    │   ├── ai_code_detector.py   ← Agent 3
-    │   ├── coherence_verifier.py ← Agent 4
-    │   └── report_generator.py   ← Agent 5
-    ├── core/
-    │   ├── github_client.py      ← GitHub API wrapper (backoff, pagination, rate-limit logging)
-    │   ├── flags.py              ← Flag enum + make_flag() helper
-    │   ├── llm.py                ← OpenAI client singleton + MODEL constant
-    │   └── models.py             ← All Pydantic models
-    ├── api/
-    │   └── routes.py             ← POST /verify, GET /results/{run_id}
-    ├── outputs/                  ← Per-run JSON files (gitignored)
-    └── frontend/
-        ├── index.html
-        ├── package.json          ← pdfjs-dist pinned at 3.11.174
-        ├── vite.config.js
-        └── src/
-            ├── main.jsx
-            ├── App.jsx
-            ├── api.js            ← fetch wrapper — BASE URL hardcoded to localhost:8000
-            └── components/
-                ├── UploadForm.jsx   ← GitHub username + PDF upload, pdfjs parsing
-                ├── StatusPoll.jsx   ← polls GET /results/{run_id} until complete
-                └── ReportView.jsx   ← renders RecruiterReport + CandidateReport
-```
-
----
-
-## Environment Variables
-
-Create `verifai/.env` (never commit it):
-
-```
-GITHUB_TOKEN=ghp_your_token_here
-OPENAI_API_KEY=sk-your_key_here
-```
-
-Set these same vars in Railway (backend). Vercel frontend doesn't need them.
+Remote uses SSH: `git@github.com:subbarayudu8660/VerifAI.git`
+Git root is at `verifai/` (the inner directory), not the project root.
 
 ---
 
@@ -122,18 +49,147 @@ npm run dev
 # opens at http://localhost:5173
 ```
 
-The frontend `api.js` hardcodes `BASE = "http://localhost:8000"` — fine for local, broken on Vercel.
+---
+
+## Environment Variables
+
+Create `verifai/.env` (never commit it):
+
+```
+GITHUB_TOKEN=ghp_your_token_here
+OPENAI_API_KEY=sk-your_key_here
+```
+
+Same vars set in Railway dashboard. Vercel frontend needs none.
+
+---
+
+## Full File Structure
+
+```
+verifAI/                          ← project root (CLAUDE.md lives here, gitignored)
+└── verifai/                      ← git root
+    ├── main.py                   ← FastAPI entrypoint (wiring only)
+    ├── pipeline.py               ← LangGraph StateGraph + stream_pipeline()
+    ├── state.py                  ← PipelineState TypedDict
+    ├── requirements.txt
+    ├── .env                      ← local secrets (gitignored)
+    ├── .env.example
+    ├── .gitignore
+    ├── agents/
+    │   ├── resume_parser.py      ← Agent 1: OpenAI claim extraction
+    │   ├── github_scraper.py     ← Agent 2: GitHub API scraping + flag detection
+    │   ├── ai_code_detector.py   ← Agent 3: commit diff AI-generation scoring
+    │   ├── coherence_verifier.py ← Agent 4: skill + project matching vs GitHub
+    │   └── report_generator.py   ← Agent 5: LLM synthesis → dual reports
+    ├── core/
+    │   ├── github_client.py      ← GitHub API wrapper (backoff, pagination)
+    │   ├── flags.py              ← Flag enum + make_flag() helper
+    │   ├── llm.py                ← OpenAI client singleton + MODEL constant
+    │   └── models.py             ← All Pydantic models
+    ├── api/
+    │   └── routes.py             ← POST /verify, GET /results/{run_id}
+    ├── outputs/                  ← Per-run JSON files (gitignored)
+    └── frontend/
+        ├── index.html
+        ├── package.json          ← pdfjs-dist pinned at 3.11.174
+        ├── vite.config.js
+        └── src/
+            ├── main.jsx
+            ├── App.jsx
+            ├── api.js            ← BASE URL hardcoded to localhost:8000
+            └── components/
+                ├── UploadForm.jsx   ← username + PDF upload, pdfjs parsing
+                ├── StatusPoll.jsx   ← live agent progress, polls every 3s
+                └── ReportView.jsx   ← full report UI
+```
+
+---
+
+## 5-Agent Pipeline
+
+All agents share `PipelineState` (TypedDict in `state.py`). Pipeline runs via LangGraph `StateGraph`. Each agent sets `state["current_agent"]` at entry so the frontend can show live progress.
+
+| Agent | File | What it does |
+|-------|------|--------------|
+| 1 — Resume Parser | `agents/resume_parser.py` | OpenAI extracts structured claims. Each claim: `claim`, `category` (skill/project/role/education/achievement), `source_section`, `skip_github_check`, `confidence`, `raw_text`. Experience claims tagged `skip_github_check: true`. |
+| 2 — GitHub Scraper | `agents/github_scraper.py` | Fetches repos, commits, languages, contributors. Flags: recent creation (≤20 days), no commit history, fork with no contribution. Standalone: `python -m agents.github_scraper <username>` |
+| 3 — AI Code Detector | `agents/ai_code_detector.py` | Samples up to 5 commit diffs per repo (max 3000 chars), scores for AI-generation likelihood. Qualitative signals only — no numeric score shown. |
+| 4 — Coherence Verifier | `agents/coherence_verifier.py` | Skill matching via `_skill_in_repo()` with `_SKILL_ALIASES` map. Project matching via `_keyword_overlap()` (keyword set intersection, threshold 0.25). Skips experience section. LLM generates interview questions for contradicted claims. |
+| 5 — Report Generator | `agents/report_generator.py` | LLM synthesises `RecruiterReport` (risk level, red flags, recommendation) and `CandidateReport` (strengths, feedback). |
+
+### LangGraph wiring (`pipeline.py`)
+- Entry: `parse_resume → scrape_github`
+- Conditional edge after `scrape_github`: if `github_data is None` → skip to `generate_report`, else → `detect_ai_code → verify_coherence → generate_report`
+- `stream_pipeline()` uses `_compiled.stream(stream_mode="values")` — yields full state after each node so `routes.py` can update `_results[run_id]` live
+
+### Live progress (how it works end-to-end)
+1. `POST /verify` initialises `_results[run_id]` with `current_agent: "queued"` and starts `_run_and_store` as a background task
+2. `_run_and_store` iterates `stream_pipeline()`, writing `_results[run_id] = state` after each agent
+3. Frontend `StatusPoll` polls `GET /results/{run_id}` every 3s, reads `current_agent`, updates dot UI
+4. Polling stops when `final_report !== null` or `errors.length > 0`
+
+---
+
+## Coherence Verifier Detail (`agents/coherence_verifier.py`)
+
+### Skill matching — `_skill_in_repo(skill_lower, repo)`
+1. Direct language match (e.g. "python" == "Python")
+2. Direct text match — skill name in README, description, or repo name
+3. Alias match — language alias must match AND skill keyword must appear in README/desc/name (prevents inflated counts from broad aliases like "python")
+
+`_SKILL_ALIASES` covers: React, Node.js, Express, Next.js, Vue, Angular, LangChain, LangGraph, PyTorch, TensorFlow, scikit-learn, pandas, numpy, MongoDB, MySQL, FastAPI, Flask, Docker, Kubernetes, GraphQL, SwiftUI, and ~30 more.
+
+`_SKIP_SKILLS` excludes: git, GitHub, VS Code, Jupyter, Linux, Agile, Jira, Slack, etc. — tools not demonstrable on GitHub.
+
+### Project matching — `_keyword_overlap(claim, repo_name, repo_desc, readme)`
+- Extracts keywords (>3 chars, not stopwords) from claim and from repo name + description + first 500 chars of README
+- Score = overlap / claim_word_count
+- Threshold 0.25 to count as a match
+- Unmatched projects classified as: `CLAIM_NO_EVIDENCE`, `LIKELY_PRIVATE_CORPORATE`, or `LIKELY_PRIVATE_CLASSIFIED`
+
+### Confidence scoring — `_skill_confidence(n_repos, total_commits)`
+| Repos | Commits | Confidence |
+|-------|---------|------------|
+| 0 | any | 0.0 |
+| 1 | <10 | 0.3 |
+| ≤2 | 10–50 | 0.55 |
+| ≥2 | 50–200 | 0.75 |
+| ≥3 | 200–500 | 0.90 |
+| ≥3 | >500 | 0.95 |
+
+---
+
+## Frontend UI — ReportView.jsx
+
+Sections rendered (top to bottom):
+1. **Score header** — Trust score 0–100, LOW/MEDIUM/HIGH RISK badge, summary, stats (repos, commits, languages, account age)
+2. **Red Flags** — contradicted claims with evidence strings and suggested interview questions
+3. **Skill Verification table** — two columns: Skill | Evidence ("3 repos" or "No evidence found"). No confidence %, no Claimed Level column.
+4. **Project Claims** — ✓ matched repo with GitHub link, or ✗/⚠/🔒 with flag reason
+5. **GitHub Summary table** — repo name (with inline badges), commits, languages, open issues
+6. **Interview Questions** — from coherence LLM, contradicted claims only
+7. **Debug panel** — collapsible, shows pipeline errors
+
+### Inline repo badges
+| Badge | Meaning |
+|-------|---------|
+| Recently created | Repo ≤20 days old |
+| No commit history | 0 or 1 commits |
+| Fork | Forked with no own commits |
 
 ---
 
 ## Decisions Made (do not revert)
 
-- **No numeric AI score** — Agent 3 produces qualitative signals only. A number felt misleading; the report describes patterns instead.
-- **Experience section skipped from GitHub checks** — corporate/internship code lives in private repos; checking it always produces false negatives. Claims tagged `skip_github_check: true`.
-- **Skills evaluated individually, not as groups** — "Python, Django, REST APIs" → three separate evidence checks, not one grouped verdict.
-- **No business logic in `main.py` or `pipeline.py`** — wiring only.
-- **All inter-agent data via Pydantic models** — never raw dicts between agents.
-- **Errors are accumulated, not fatal** — `errors: list[str]` in state; pipeline continues on agent failure.
+- **No numeric AI score** — qualitative signals only; a number felt misleading
+- **Experience section skipped** — corporate code lives in private repos; always false negatives
+- **Skills evaluated individually** — "Python, Django, REST APIs" → 3 separate checks
+- **No business logic in `main.py` or `pipeline.py`** — wiring only
+- **All inter-agent data via Pydantic models** — never raw dicts
+- **Errors accumulated, not fatal** — pipeline continues on any agent failure
+- **Recent creation threshold: 20 days** (was 30, changed this session)
+- **Skill table: repo count only** — confidence % removed, Claimed Level removed
 
 ---
 
@@ -141,32 +197,20 @@ The frontend `api.js` hardcodes `BASE = "http://localhost:8000"` — fine for lo
 
 | Issue | Status | Notes |
 |-------|--------|-------|
-| PDF worker ("Load failed") on Vercel | **In progress** | Switched to `new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url)` + downgraded pdfjs-dist to 3.11.174 (pinned). Not yet pushed — testing locally first. |
-| Skill matching broken — 0 evidence for real skills | **OPEN — needs fix** | React, Node.js, JavaScript, LangChain, MongoDB etc. show 0 evidence despite being in repos. Root cause: `_skill_in_repo()` only checks exact `skill_lower in readme` — README text isn't being searched properly, and aliases aren't handled (e.g. "JS" ≠ "JavaScript"). |
-| Project name matching too strict | **OPEN — needs fix** | `_check_projects()` uses word overlap on repo name + description only. Needs fuzzy keyword matching — overlap of meaningful tokens, not string similarity. |
-| `api.js` BASE URL hardcoded to `localhost:8000` | **Open** | Vercel frontend can't reach Railway backend. Fix: `import.meta.env.VITE_API_URL` + set var in Vercel dashboard. |
-| `has_readme` approximated | Open | Needs GitHub tree API call in `github_client.py` for exact check. |
-| In-memory result store | Open | `_results` dict in `api/routes.py` resets on Railway restart; needs SQLite or file persistence. |
-
----
-
-## UI Changes Pending (not yet implemented)
-
-- **Remove "Claimed Level" column** from skill verification table — adds noise, not useful.
-- **Replace confidence % with repo count** — show "3 repos" instead of "75%" for skill evidence.
-- **Collapse 0-evidence skills to bottom** — skills with no GitHub evidence should be visually separated (e.g. greyed out section at the bottom), not mixed with evidenced skills.
+| PDF worker on Vercel | **In progress** | `UploadForm.jsx` uses `new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url)`, pdfjs-dist pinned at 3.11.174. Not yet pushed — test locally first with `npm install && npm run dev`. |
+| `api.js` BASE URL hardcoded | **Open** | `BASE = "http://localhost:8000"` — Vercel can't reach Railway. Fix: `import.meta.env.VITE_API_URL` + set `VITE_API_URL=https://verifai-production-d9d4.up.railway.app` in Vercel dashboard. |
+| In-memory result store | **Open** | `_results` dict resets on Railway restart. Fix: SQLite or file-based persistence. |
+| `has_readme` approximated | **Open** | Currently just checks if readme_text is truthy. Needs GitHub tree API for exact check. |
 
 ---
 
 ## What's Next (priority order)
 
-1. **Fix skill matching in `coherence_verifier.py`** — `_skill_in_repo()` needs alias handling (JS→JavaScript, Node→Node.js etc.) and proper README search. This is the most impactful correctness fix.
-2. **Fix project matching** — replace word-overlap with fuzzy keyword matching in `_check_projects()`.
-3. **Apply UI changes above** — ReportView.jsx skill table cleanup.
-4. **Fix `api.js` BASE URL** — `import.meta.env.VITE_API_URL`, set in Vercel env vars.
-5. **Landing page** — marketing/explainer page before the upload form.
-6. **`has_readme` exact check** — use GitHub tree API in `github_client.py`.
-7. **Persistence** — replace in-memory `_results` dict with SQLite or file-based store.
+1. **Test and push PDF worker fix** — `npm install && npm run dev` in `verifai/frontend`, verify PDF upload works, then commit + push
+2. **Fix `api.js` BASE URL** — env-aware `VITE_API_URL`, set in Vercel dashboard so hosted frontend reaches Railway
+3. **Landing page** — marketing/explainer before the upload form
+4. **Persistence** — SQLite or file-based store to survive Railway restarts
+5. **`has_readme` exact check** — GitHub tree API in `github_client.py`
 
 ---
 
@@ -175,12 +219,17 @@ The frontend `api.js` hardcodes `BASE = "http://localhost:8000"` — fine for lo
 ### Session 1 — 2026-05-30
 Built full scaffold: all 5 agents (Agent 2 fully implemented, rest stubs), core modules, FastAPI routes, LangGraph pipeline, requirements, README.
 
-### Session 2 — 2026-05-31
-- All 5 agents fully implemented (resume parser, AI detector, coherence verifier, report generator)
-- React frontend built: UploadForm, StatusPoll, ReportView components
+### Session 2 — 2026-05-31 (morning)
+- All 5 agents fully implemented
+- React frontend built: UploadForm, StatusPoll, ReportView
 - Deployed: backend → Railway, frontend → Vercel
-- Fixed PDF worker path (multiple iterations): currently on `new URL(...)` + pdfjs-dist 3.11.174 (testing locally, not yet pushed)
-- Identified skill matching bug: 0 evidence for React, Node.js, JS, LangChain, MongoDB etc.
-- Identified project matching as too strict (needs fuzzy keyword overlap)
-- Pending UI changes: remove Claimed Level column, show repo count not %, collapse 0-evidence skills
-- Clarified git repo lives at `verifai/` (inner dir), not project root
+- PDF worker fix iterations (CDN → unpkg → local `new URL(...)` + pdfjs-dist 3.11.174)
+
+### Session 3 — 2026-05-31 (afternoon)
+- Added `_SKILL_ALIASES` map to `coherence_verifier.py` — React, Node.js, LangChain, MongoDB etc. now match correctly
+- Fixed alias matching to require BOTH language match AND text confirmation — prevents inflated counts from broad aliases (e.g. "python" matching all Python repos for "LangChain")
+- Replaced `_check_projects()` with `_keyword_overlap()` — keyword set intersection with stopword filtering, threshold 0.25
+- Skill table redesigned: removed Confidence % column, removed Claimed Level column, Evidence now shows repo count only
+- Recent creation threshold changed: 30 days → 20 days
+- Repo badges renamed: "New repo" → "Recently created", "No history" → "No commit history"
+- Fixed live progress polling: root cause was `_run_and_store` only wrote to `_results[run_id]` once (after full pipeline). Fixed by adding `stream_pipeline()` in `pipeline.py` using `_compiled.stream(stream_mode="values")` — now writes state after each agent so frontend sees real-time `current_agent` updates
