@@ -9,7 +9,7 @@ import sys
 
 from core.constants import MAX_PATCH_CHARS, SAMPLE_COMMITS
 from core.github_client import GitHubClient
-from core.llm import MODEL, get_client
+from core.llm import MODEL, extract_json, get_client
 from core.models import AIDetectionResult, RepoAIScore
 from state import PipelineState
 
@@ -75,15 +75,13 @@ def detect_ai_code(state: PipelineState) -> PipelineState:
             if not patches:
                 continue
 
-            resp = llm_client.chat.completions.create(
+            resp = llm_client.messages.create(
                 model=MODEL,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": f"Repository: {repo_name}\n\n{patches}"},
-                ],
+                max_tokens=1024,
+                system=_SYSTEM,
+                messages=[{"role": "user", "content": f"Repository: {repo_name}\n\n{patches}"}],
             )
-            data = json.loads(resp.choices[0].message.content)
+            data = json.loads(extract_json(resp.content[0].text))
             repo_scores.append(RepoAIScore(
                 repo_name=repo_name,
                 ai_likelihood=float(data.get("ai_likelihood", 0.0)),

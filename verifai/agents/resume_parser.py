@@ -7,7 +7,7 @@ whether to check it against GitHub (projects/skills only — never experience).
 
 import json
 
-from core.llm import MODEL, get_client
+from core.llm import MODEL, extract_json, get_client
 from core.models import ResumeClaim, ResumeClaimsResult
 from state import PipelineState
 
@@ -80,15 +80,13 @@ def parse_resume(state: PipelineState) -> PipelineState:
 
     client = get_client()
     try:
-        resp = client.chat.completions.create(
+        resp = client.messages.create(
             model=MODEL,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": state["resume_raw"]},
-            ],
+            max_tokens=2000,
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": state["resume_raw"]}],
         )
-        data = json.loads(resp.choices[0].message.content)
+        data = json.loads(extract_json(resp.content[0].text))
 
         claims = []
         for raw in data.get("claims", []):

@@ -20,7 +20,7 @@ from core.constants import (
     SKIP_SKILLS,
     STOPWORDS,
 )
-from core.llm import MODEL, get_client
+from core.llm import MODEL, extract_json, get_client
 from core.models import CoherenceCheck, CoherenceReport
 from state import PipelineState
 
@@ -376,15 +376,13 @@ def verify_coherence(state: PipelineState) -> PipelineState:
 
     client = get_client()
     try:
-        resp = client.chat.completions.create(
+        resp = client.messages.create(
             model=MODEL,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": _build_llm_context(state)},
-            ],
+            max_tokens=4096,
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": _build_llm_context(state)}],
         )
-        data = json.loads(resp.choices[0].message.content)
+        data = json.loads(extract_json(resp.content[0].text))
         result = CoherenceReport(
             checks=[CoherenceCheck(**c) for c in data.get("checks", [])],
             summary=data.get("summary", ""),

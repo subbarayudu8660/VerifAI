@@ -13,7 +13,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from core.llm import MODEL, get_client
+from core.llm import MODEL, extract_json, get_client
 from core.models import (
     ActivityPatterns,
     CandidateReport,
@@ -226,15 +226,13 @@ def generate_report(state: PipelineState) -> PipelineState:
     candidate_name = (state.get("resume_claims") or {}).get("candidate_name") or username
 
     try:
-        resp = client.chat.completions.create(
+        resp = client.messages.create(
             model=MODEL,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": _build_context(state)},
-            ],
+            max_tokens=4096,
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": _build_context(state)}],
         )
-        data = json.loads(resp.choices[0].message.content)
+        data = json.loads(extract_json(resp.content[0].text))
 
         ap = data.get("activity_patterns", {})
         c_data = data.get("candidate", {})

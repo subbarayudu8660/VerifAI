@@ -1,14 +1,19 @@
 import os
+import re
 
-from openai import OpenAI
+import anthropic
 
-MODEL = "gpt-4o"
+MODEL = "claude-sonnet-4-20250514"
 
 
-def get_client() -> OpenAI:
-    return OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        timeout=120.0,
-        max_retries=3,
+def get_client() -> anthropic.Anthropic:
+    return anthropic.Anthropic(
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
     )
+
+
+def extract_json(text: str) -> str:
+    """Strip markdown code fences that Claude sometimes wraps JSON in."""
+    text = text.strip()
+    match = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL)
+    return match.group(1).strip() if match else text
