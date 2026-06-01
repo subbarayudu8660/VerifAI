@@ -1,0 +1,134 @@
+"""Shared constants for the VerifAI pipeline.
+
+All hardcoded thresholds, sets, and maps live here.
+Agent files import from this module — nothing hardcoded inline.
+"""
+
+# ---------------------------------------------------------------------------
+# GitHub scraper
+# ---------------------------------------------------------------------------
+
+# Repos created within this many days are flagged RECENT_CREATION
+RECENT_CREATION_DAYS = 20
+
+# ---------------------------------------------------------------------------
+# AI code detector
+# ---------------------------------------------------------------------------
+
+# Max commits sampled per repo for AI detection
+SAMPLE_COMMITS = 5
+
+# Max characters taken from each commit patch
+MAX_PATCH_CHARS = 3000
+
+# ---------------------------------------------------------------------------
+# Coherence verifier — skill matching
+# ---------------------------------------------------------------------------
+
+# Skills that cannot be verified on GitHub (tools, environments, processes)
+SKIP_SKILLS = {
+    "git", "github", "vs code", "vscode", "visual studio", "visual studio code",
+    "jupyter", "jupyter notebook", "virtualenv", "virtual environments",
+    "terminal", "linux", "windows", "macos", "unix", "bash", "zsh",
+    "agile", "scrum", "jira", "confluence", "slack", "notion", "trello",
+}
+
+# Maps a resume skill name to GitHub language names that act as a first-pass filter.
+# A repo only counts if the language alias matches AND the skill keyword appears in
+# README/description/repo name. Empty list = text match only (no language pre-filter).
+SKILL_ALIASES: dict[str, list[str]] = {
+    # Frontend frameworks — JSX/TSX files are a stronger signal than plain JS
+    "react": ["jsx", "tsx"],
+    "react native": ["tsx"],
+    "next.js": ["nextjs", "next.js"],
+    "vue": ["vue"],
+    "angular": ["angular"],
+    "javascript (es6+)": ["javascript"],
+    "typescript": ["typescript"],
+
+    # Backend — text confirmation required alongside language match
+    "node.js": ["javascript"],
+    "express": ["javascript"],
+    "fastapi": ["python"],
+    "flask": ["python"],
+
+    # Auth / API patterns — must appear explicitly in text, no language shortcut
+    "jwt": [],
+    "oauth 2.0": [],
+    "oauth": [],
+    "rest apis": [],
+    "websockets": [],
+    "microservices": [],
+    "graphql": [],
+
+    # ML / AI libraries — Python repos only count if the library name is in text
+    "langchain": [],
+    "langgraph": [],
+    "pytorch": [],
+    "tensorflow": [],
+    "scikit-learn": [],
+    "pandas": [],
+    "numpy": [],
+    "matplotlib": [],
+    "huggingface transformers": [],
+    "peft": [],
+    "xgboost": [],
+    "lightgbm": [],
+    "langsmith": [],
+    "pinecone (vector db)": [],
+    "chromadb": [],
+
+    # Databases — must appear in text
+    "mongodb": [],
+    "mysql": [],
+    "sql": ["jupyter notebook"],
+    "postgresql": [],
+    "redis": [],
+
+    # Infrastructure — must appear in text
+    "docker": ["dockerfile"],
+    "kubernetes": ["yaml"],
+    "github api": [],
+
+    # Web scraping / utilities — must appear in text
+    "beautifulsoup": [],
+    "selenium": [],
+    "requests": [],
+    "streamlit": [],
+
+    # Languages — direct GitHub language match
+    "python": ["python"],
+    "java": ["java"],
+    "c++": ["c++", "c"],
+    "swift": ["swift"],
+    "latex": ["tex"],
+}
+
+# ---------------------------------------------------------------------------
+# Coherence verifier — project matching
+# ---------------------------------------------------------------------------
+
+# Words ignored when computing keyword overlap between a project claim and repo text
+STOPWORDS = {
+    "a", "an", "the", "and", "or", "for", "to", "in", "of", "with",
+    "on", "at", "by", "from", "as", "is", "was", "are", "were", "be",
+    "been", "has", "have", "had", "that", "this", "it", "its",
+}
+
+# Keyword overlap score (0–1) required to count a project claim as matched
+PROJECT_MATCH_THRESHOLD = 0.35
+
+# ---------------------------------------------------------------------------
+# Coherence verifier — unmatched project classification
+# ---------------------------------------------------------------------------
+
+# Words in a project claim that suggest classified/government work
+CLASSIFIED_HINTS = [
+    "classified", "secret", "top secret", "itar", "dod", "darpa", "satellite",
+]
+
+# Words that suggest corporate private-repo work
+PRIVATE_HINTS = [
+    "dod", "darpa", "mitre", "classified", "defense", "government", "itar",
+    "secret", "federal", "lockheed", "raytheon", "booz", "palantir", "saic",
+]

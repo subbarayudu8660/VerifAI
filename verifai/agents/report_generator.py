@@ -1,8 +1,12 @@
 """Agent 5 — Report Generator.
 
-Synthesises all prior agent outputs into dual reports:
-- RecruiterReport: risk level, red flags, recommendation
-- CandidateReport: strengths and honest feedback
+Reads: github_data, ai_detection, coherence_report, skill_verification,
+       project_matches, resume_claims
+Writes: final_report
+
+Synthesises all prior agent outputs into:
+- RecruiterReport: factual overview, timeline flags, activity patterns
+- CandidateReport: strengths and constructive feedback
 """
 
 import json
@@ -10,35 +14,45 @@ from datetime import datetime, timezone
 
 from core.llm import MODEL, get_client
 from core.models import (
+    ActivityPatterns,
     CandidateReport,
     FinalReport,
-    FlagEntry,
     RecruiterReport,
+    TimelineFlag,
 )
 from state import PipelineState
 
 _SYSTEM = """\
-You are a senior technical recruiter writing a verification report for a candidate.
+You are generating a candidate intelligence report for a technical recruiter.
+Your job is to surface evidence and suggest questions — never verdicts.
 
-You will receive GitHub scrape data, AI code detection results, and a coherence report
-comparing the candidate's resume claims against their actual GitHub activity.
+You have access to:
+- resume_claims: structured claims from the resume
+- github_data: full GitHub scrape results
+- skill_verification: per-skill evidence counts
+- project_matches: resume projects vs GitHub repos
+- ai_detection: qualitative code signals
 
-Generate two reports:
+Return JSON with exactly this structure:
 
-1. Recruiter-facing: frank risk assessment
-2. Candidate-facing: constructive, professional feedback (assume they will read it)
-
-Return JSON with exactly this shape:
 {
-  "recruiter": {
-    "candidate": "name or github username",
-    "overall_risk": "low | medium | high",
-    "red_flags": [
-      {"flag_type": "string", "description": "string", "evidence": "string"}
-    ],
-    "summary": "3-4 sentence frank assessment",
-    "recommendation": "proceed | proceed_with_caution | reject"
+  "overview": "2-3 sentence factual summary of what this GitHub profile shows. Focus on what IS there, not what is missing. No verdict.",
+
+  "timeline_flags": [
+    {
+      "observation": "Claims Python since 2021 -> First Python commit: March 2024",
+      "evidence": "specific dates or data that triggered this",
+      "interview_question": "Walk me through your Python work before 2024 — were these in private repos?"
+    }
+  ],
+
+  "activity_patterns": {
+    "account_age": "GitHub account created: 2024",
+    "most_active_languages": ["Python", "Jupyter Notebook"],
+    "repo_velocity": "3 repos created in last 20 days",
+    "commit_pattern": "neutral observation about commit frequency and distribution only — e.g. 'Commits concentrated in recent months with sparse historical activity'. Never mention AI, suspicious, or fraud."
   },
+
   "candidate": {
     "candidate": "name or github username",
     "strengths": ["list of genuine strengths observed"],
@@ -47,9 +61,20 @@ Return JSON with exactly this shape:
   }
 }
 
-Base red_flags on: GitHub flags, AI likelihood scores, contradicted resume claims.
-Be specific — reference repo names, dates, languages, commit counts.
-overall_risk: high if AI likelihood >0.7 OR >2 claims contradicted OR multiple FORK/NO_COMMIT flags.
+Rules:
+- Never use the words: fraudulent, suspicious, lying, fake, risk, score
+- Every timeline flag must have a specific interview question
+- Only emit timeline flags when there is real evidence — do not fabricate
+- If no timeline flags exist, return an empty array
+- Overview must be neutral and factual
+- When evidence is absent, note it may be explained by private or corporate repos
+
+CRITICAL RULE FOR timeline_flags:
+Only generate a flag if the resume EXPLICITLY claims a skill for a specific time
+period or number of years (e.g. "5 years of Python", "Python since 2019").
+If the resume just lists "Python" with no timeframe → NO flag.
+Only flag when the resume states a duration or start year AND GitHub contradicts it.
+No explicit resume time claim = no timeline flag for that skill.
 """
 
 
@@ -67,13 +92,35 @@ def _build_context(state: PipelineState) -> str:
             parts.append(f"  [{c['category']}] {c['claim']}")
 
     github = state.get("github_data") or {}
-    parts.append(f"\nGitHub: {github.get('total_public_repos')} public repos | "
-                 f"account since {github.get('account_created_at')} | "
-                 f"total flags: {github.get('total_flags')}")
+    parts.append(
+        f"\nGitHub: {github.get('total_public_repos')} public repos | "
+        f"account since {github.get('account_created_at')} | "
+        f"total flags: {github.get('total_flags')}"
+    )
+    parts.append(f"Languages first seen: {github.get('languages_first_seen')}")
     for repo in github.get("repos", []):
         flags = [f["flag_type"] for f in repo.get("flags", [])]
-        parts.append(f"  {repo['repo_name']}: {repo['total_commits']} commits, "
-                     f"languages={list(repo['languages'].keys())}, flags={flags}")
+        parts.append(
+            f"  {repo['repo_name']}: {repo['total_commits']} commits, "
+            f"languages={list(repo['languages'].keys())}, "
+            f"created={repo.get('created_at', '')[:10]}, flags={flags}"
+        )
+
+    skills = state.get("skill_verification") or []
+    if skills:
+        supported = [s["skill"] for s in skills if s["evidence_found"]]
+        no_evidence = [s["skill"] for s in skills if not s["evidence_found"]]
+        parts.append(f"\nSkill verification — supported: {supported}")
+        parts.append(f"Skill verification — no public evidence: {no_evidence}")
+
+    projects = state.get("project_matches") or []
+    if projects:
+        parts.append("\nProject matches:")
+        for p in projects:
+            if p["matched_repo"]:
+                parts.append(f"  '{p['claimed_project']}' → matched: {p['matched_repo']}")
+            else:
+                parts.append(f"  '{p['claimed_project']}' → {p['flag']}: {p['note']}")
 
     ai = state.get("ai_detection") or {}
     if ai:
@@ -81,7 +128,7 @@ def _build_context(state: PipelineState) -> str:
 
     coherence = state.get("coherence_report") or {}
     if coherence:
-        parts.append(f"\nCoherence score: {coherence.get('overall_score'):.0%} | {coherence.get('summary')}")
+        parts.append(f"\nCoherence summary: {coherence.get('summary')}")
         for check in coherence.get("checks", []):
             parts.append(f"  [{check['verdict'].upper()}] {check['claim']}")
 
@@ -89,6 +136,7 @@ def _build_context(state: PipelineState) -> str:
 
 
 def generate_report(state: PipelineState) -> PipelineState:
+    """Entry point called by the LangGraph pipeline."""
     state["current_agent"] = "report_generator"
 
     if not state.get("github_data"):
@@ -96,7 +144,6 @@ def generate_report(state: PipelineState) -> PipelineState:
         return state
 
     client = get_client()
-    context = _build_context(state)
     username = state["github_username"]
     candidate_name = (state.get("resume_claims") or {}).get("candidate_name") or username
 
@@ -106,21 +153,26 @@ def generate_report(state: PipelineState) -> PipelineState:
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": context},
+                {"role": "user", "content": _build_context(state)},
             ],
         )
         data = json.loads(resp.choices[0].message.content)
 
-        r_data = data["recruiter"]
-        c_data = data["candidate"]
+        ap = data.get("activity_patterns", {})
+        c_data = data.get("candidate", {})
 
         result = FinalReport(
             recruiter=RecruiterReport(
-                candidate=r_data.get("candidate", candidate_name),
-                overall_risk=r_data.get("overall_risk", "medium"),
-                red_flags=[FlagEntry(**f) for f in r_data.get("red_flags", [])],
-                summary=r_data.get("summary", ""),
-                recommendation=r_data.get("recommendation", "proceed_with_caution"),
+                overview=data.get("overview", ""),
+                timeline_flags=[
+                    TimelineFlag(**f) for f in data.get("timeline_flags", [])
+                ],
+                activity_patterns=ActivityPatterns(
+                    account_age=ap.get("account_age", ""),
+                    most_active_languages=ap.get("most_active_languages", []),
+                    repo_velocity=ap.get("repo_velocity", ""),
+                    commit_pattern=ap.get("commit_pattern", ""),
+                ),
             ),
             candidate=CandidateReport(
                 candidate=c_data.get("candidate", candidate_name),

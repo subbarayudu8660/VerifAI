@@ -109,3 +109,14 @@ class GitHubClient:
         except Exception:
             pass
         return ""
+
+    def get_file_contents(self, owner: str, repo: str, path: str) -> str | None:
+        """Returns decoded text of a file in the repo, or None if absent or unreadable."""
+        import base64
+        try:
+            data = self.get(f"{_GITHUB_API}/repos/{owner}/{repo}/contents/{path}")
+            if isinstance(data, dict) and data.get("encoding") == "base64":
+                return base64.b64decode(data["content"]).decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        return None

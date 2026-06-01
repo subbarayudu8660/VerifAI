@@ -1,44 +1,42 @@
 """Agent 4 — Coherence Verifier.
 
-Three jobs (experience claims skipped entirely — corporate code lives in private repos):
-1. Per-skill confidence scoring against GitHub activity (skills section only).
-2. Per-project claim matching against repos (projects section only).
-3. LLM claim verification with interview questions (projects + skills only).
+Reads: resume_claims, github_data, ai_detection
+Writes: skill_verification, project_matches, coherence_report
+
+Three jobs (experience section always skipped — corporate code lives in private repos):
+1. Per-skill evidence check against GitHub repos using language matching + alias map.
+2. Per-project claim matching against repos using keyword overlap.
+3. LLM verification of project/skill claims → verdicts + interview questions for contradictions.
 """
 
 import json
 import re
 
+from core.constants import (
+    CLASSIFIED_HINTS,
+    PRIVATE_HINTS,
+    PROJECT_MATCH_THRESHOLD,
+    SKILL_ALIASES,
+    SKIP_SKILLS,
+    STOPWORDS,
+)
 from core.llm import MODEL, get_client
 from core.models import CoherenceCheck, CoherenceReport
 from state import PipelineState
 
+
 # ---------------------------------------------------------------------------
-# Constants
+# Skill matching
 # ---------------------------------------------------------------------------
-
-# Dev tools / environment skills — not demonstrable on GitHub, skip entirely
-_SKIP_SKILLS = {
-    "git", "github", "vs code", "vscode", "visual studio", "visual studio code",
-    "jupyter", "jupyter notebook", "virtualenv", "virtual environments",
-    "terminal", "linux", "windows", "macos", "unix", "bash", "zsh",
-    "agile", "scrum", "jira", "confluence", "slack", "notion", "trello",
-}
-
-_PRIVATE_HINTS = [
-    "dod", "darpa", "mitre", "classified", "defense", "government", "itar",
-    "secret", "federal", "lockheed", "raytheon", "booz", "palantir", "saic",
-]
-_CLASSIFIED_HINTS = ["classified", "secret", "top secret", "itar", "dod", "darpa", "satellite"]
-
 
 def _split_skills(claim_str: str) -> list[str]:
-    """Split a potentially comma-grouped skill string into individual technologies."""
+    """Split a comma/slash-grouped skill string into individual technologies."""
     parts = re.split(r"[,/|•·]+", claim_str)
     return [p.strip() for p in parts if p.strip() and len(p.strip()) > 1]
 
 
 def _skill_confidence(n_repos: int, total_commits: int) -> float:
+    """Map repo count + commit count to a confidence score (0.0–1.0)."""
     if n_repos == 0:
         return 0.0
     if n_repos == 1 and total_commits < 10:
@@ -54,86 +52,61 @@ def _skill_confidence(n_repos: int, total_commits: int) -> float:
     return 0.3
 
 
-_SKILL_ALIASES = {
-    "react": ["javascript", "jsx", "tsx", "react"],
-    "react native": ["javascript", "typescript", "react native"],
-    "next.js": ["javascript", "typescript", "nextjs"],
-    "node.js": ["javascript", "typescript", "node"],
-    "express": ["javascript", "typescript", "express", "node"],
-    "vue": ["javascript", "vue"],
-    "angular": ["javascript", "typescript", "angular"],
-    "javascript (es6+)": ["javascript"],
-    "typescript": ["typescript", "javascript"],
-    "langchain": ["python", "langchain"],
-    "langgraph": ["python", "langgraph"],
-    "pytorch": ["python", "pytorch", "torch"],
-    "tensorflow": ["python", "tensorflow"],
-    "scikit-learn": ["python", "scikit", "sklearn"],
-    "pandas": ["python", "pandas", "jupyter notebook"],
-    "numpy": ["python", "numpy", "jupyter notebook"],
-    "matplotlib": ["python", "matplotlib", "jupyter notebook"],
-    "huggingface transformers": ["python", "transformers", "huggingface"],
-    "peft": ["python", "peft"],
-    "mongodb": ["javascript", "typescript", "python", "mongodb"],
-    "mysql": ["python", "javascript", "sql", "mysql"],
-    "sql": ["python", "jupyter notebook", "sql"],
-    "fastapi": ["python", "fastapi"],
-    "flask": ["python", "flask"],
-    "docker": ["dockerfile", "docker", "python", "shell"],
-    "kubernetes": ["yaml", "kubernetes", "helm"],
-    "graphql": ["javascript", "typescript", "graphql"],
-    "rest apis": ["python", "javascript", "typescript"],
-    "jwt": ["javascript", "typescript", "python"],
-    "oauth 2.0": ["javascript", "typescript", "python"],
-    "websockets": ["javascript", "typescript", "python"],
-    "microservices": ["python", "javascript", "typescript"],
-    "swiftui": ["swift"],
-    "combine": ["swift"],
-    "java": ["java"],
-    "c++": ["c++", "cpp"],
-    "latex": ["tex"],
-    "pinecone (vector db)": ["python", "pinecone"],
-    "chromadb": ["python"],
-    "langsmith": ["python"],
-    "xgboost": ["python", "jupyter notebook"],
-    "lightgbm": ["python", "jupyter notebook"],
-    "beautifulsoup": ["python"],
-    "requests": ["python"],
-    "selenium": ["python"],
-    "streamlit": ["python", "streamlit"],
-    "github api": ["python", "javascript"],
-}
-
-
 def _skill_in_repo(skill_lower: str, repo: dict) -> bool:
-    """Check language breakdown, README text, description, and repo name."""
+    """Return True if a repo provides evidence of the given skill.
+
+    Priority order:
+    1. Dependency files (requirements.txt / package.json / pyproject.toml) — most reliable
+    2. GitHub language API — strong for language-level skills
+    3. README, description, repo name — supporting text evidence
+    4. Alias match — language alias + text confirmation (prevents over-counting)
+    """
+    # Priority 1 — dependency files
+    deps = repo.get("dependencies") or {}
+    all_deps = deps.get("python", []) + deps.get("javascript", [])
+    if all_deps:
+        if any(skill_lower == dep or skill_lower in dep or dep in skill_lower for dep in all_deps):
+            return True
+        aliases = SKILL_ALIASES.get(skill_lower, [])
+        if any(alias in dep or dep in alias for alias in aliases for dep in all_deps):
+            return True
+
+    # Priority 2 — language API
     repo_langs = [l.lower() for l in repo.get("languages", {})]
+    if any(skill_lower == l for l in repo_langs):
+        return True
+
+    # Priority 3 — text: README, description, repo name
     readme = repo.get("readme_text", "").lower()
     desc = (repo.get("description") or "").lower()
     name = repo["repo_name"].lower().replace("-", " ").replace("_", " ")
 
-    # Direct language match (e.g. Python, TypeScript, Swift)
-    if any(skill_lower == l for l in repo_langs):
-        return True
-
-    # README/description/name direct match
     if skill_lower in readme or skill_lower in desc or skill_lower in name:
         return True
 
-    # Alias match — language must match AND skill keyword must appear in text
-    aliases = _SKILL_ALIASES.get(skill_lower, [])
-    skill_keywords = [skill_lower] + aliases
-
-    lang_matches = any(alias in l for alias in aliases for l in repo_langs)
-    text_confirms = any(kw in readme or kw in desc or kw in name for kw in skill_keywords)
-
-    if lang_matches and text_confirms:
-        return True
+    # Priority 4 — alias match requires both language match AND text confirmation
+    aliases = SKILL_ALIASES.get(skill_lower, [])
+    if aliases:
+        repo_langs_str = " ".join(repo_langs)
+        text = f"{readme} {desc} {name}"
+        lang_matches = any(alias in repo_langs_str for alias in aliases)
+        text_confirms = any(alias in text for alias in aliases)
+        if lang_matches and text_confirms:
+            return True
 
     return False
 
 
+def _extract_level(raw_text: str) -> str:
+    raw_lower = raw_text.lower()
+    for level in ("expert", "senior", "advanced", "proficient", "intermediate", "familiar", "beginner"):
+        if level in raw_lower:
+            return level.capitalize()
+    return "Listed"
+
+
 def _check_skills(claims: dict, github: dict) -> list[dict]:
+    """Return a list of per-skill evidence entries, sorted by confidence ascending."""
     skill_claims = [
         c for c in claims.get("claims", [])
         if c["category"] == "skill" and not c.get("skip_github_check", False)
@@ -142,29 +115,24 @@ def _check_skills(claims: dict, github: dict) -> list[dict]:
     seen: dict[str, dict] = {}
 
     for claim in skill_claims:
-        # Safety-net split in case LLM still grouped skills
-        individual_skills = _split_skills(claim["claim"])
-
-        for skill in individual_skills:
+        for skill in _split_skills(claim["claim"]):
             skill_lower = skill.lower()
-
-            # Skip non-verifiable tool/environment skills
-            if skill_lower in _SKIP_SKILLS:
+            if skill_lower in SKIP_SKILLS:
                 continue
 
-            matched_repos: list[dict] = []
-            for repo in repos:
-                if _skill_in_repo(skill_lower, repo):
-                    matched_repos.append({"repo": repo["repo_name"], "commits": repo["total_commits"]})
-
+            matched_repos = [
+                {"repo": r["repo_name"], "commits": r["total_commits"]}
+                for r in repos if _skill_in_repo(skill_lower, r)
+            ]
             total_commits = sum(r["commits"] for r in matched_repos)
             confidence = _skill_confidence(len(matched_repos), total_commits)
 
-            raw_lower = claim["raw_text"].lower()
-            if confidence <= 0.3 and any(w in raw_lower for w in ("expert", "senior", "lead", "advanced")):
+            if confidence <= 0.3 and any(
+                w in claim["raw_text"].lower()
+                for w in ("expert", "senior", "lead", "advanced")
+            ):
                 confidence = max(0.0, confidence - 0.2)
 
-            first_seen = github.get("languages_first_seen", {}).get(skill, None)
             matched_names = {m["repo"] for m in matched_repos}
             last_seen = max(
                 (r["last_commit_date"] for r in repos
@@ -177,25 +145,15 @@ def _check_skills(claims: dict, github: dict) -> list[dict]:
                 "claimed_level": _extract_level(claim["raw_text"]),
                 "evidence_found": len(matched_repos) > 0,
                 "evidence_repos": [m["repo"] for m in matched_repos],
-                "first_seen": first_seen,
+                "first_seen": github.get("languages_first_seen", {}).get(skill),
                 "last_seen": last_seen,
                 "total_commits_in_skill": total_commits,
                 "confidence": round(confidence, 2),
             }
-            # Dedup: keep highest confidence entry per skill
-            key = skill_lower
-            if key not in seen or entry["confidence"] > seen[key]["confidence"]:
-                seen[key] = entry
+            if skill_lower not in seen or entry["confidence"] > seen[skill_lower]["confidence"]:
+                seen[skill_lower] = entry
 
     return sorted(seen.values(), key=lambda x: x["confidence"])
-
-
-def _extract_level(raw_text: str) -> str:
-    raw_lower = raw_text.lower()
-    for level in ("expert", "senior", "advanced", "proficient", "intermediate", "familiar", "beginner"):
-        if level in raw_lower:
-            return level.capitalize()
-    return "Listed"
 
 
 # ---------------------------------------------------------------------------
@@ -203,54 +161,54 @@ def _extract_level(raw_text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _company_names(claims: dict) -> list[str]:
-    """Extract employer names from experience claims for private-repo detection."""
+    """Extract employer names from experience claims for private-repo classification."""
     names = []
     for c in claims.get("claims", []):
         if c.get("company"):
             names.append(c["company"].lower())
-        # Also pull from claim text for experience claims
         if c.get("source_section") == "experience":
             names.append(c["claim"].lower())
     return names
 
 
 def _classify_unmatched(project_text: str, company_names: list[str]) -> tuple[str, str]:
-    """Return (flag, note) for a project with no public repo match."""
+    """Classify a project claim that has no matching public repo."""
     lower = project_text.lower()
 
-    if any(h in lower for h in _CLASSIFIED_HINTS):
+    if any(h in lower for h in CLASSIFIED_HINTS):
         return (
             "LIKELY_PRIVATE_CLASSIFIED",
             "Classified/government work — verify directly with candidate.",
         )
-
     if any(name in lower for name in company_names if len(name) > 3):
         return (
             "LIKELY_PRIVATE_CORPORATE",
-            "Work done at a named employer — likely in private/corporate repo. Ask candidate directly.",
+            "Work done at a named employer — likely in a private/corporate repo.",
         )
-
-    # Generic corporate hint words
     if any(w in lower for w in ("internship", "intern", "contracted", "corporation", "inc.", "llc")):
         return (
             "LIKELY_PRIVATE_CORPORATE",
-            "Corporate/contracted work — likely in private repo. Ask candidate directly.",
+            "Corporate/contracted work — likely in a private repo.",
         )
-
     return ("CLAIM_NO_EVIDENCE", "No matching public repo found.")
 
 
-_STOPWORDS = {
-    "a", "an", "the", "and", "or", "for", "to", "in", "of", "with",
-    "on", "at", "by", "from", "as", "is", "was", "are", "were", "be",
-    "been", "has", "have", "had", "that", "this", "it", "its",
+_TECH_KEYWORDS = {
+    "react", "node", "express", "mongodb", "python", "django", "fastapi",
+    "flask", "typescript", "javascript", "swift", "kotlin", "java", "c++",
+    "postgres", "mysql", "redis", "docker", "kubernetes", "aws", "gcp",
+    "azure", "pytorch", "tensorflow", "langchain", "nextjs", "vue", "angular",
 }
 
 
 def _keyword_overlap(claim: str, repo_name: str, repo_desc: str, readme: str) -> float:
+    """Score how well a project claim matches a repo using keyword set intersection.
+
+    Score = |claim_keywords ∩ repo_keywords| / |claim_keywords|
+    """
     def keywords(text: str) -> set[str]:
         words = re.findall(r'\b\w+\b', text.lower())
-        return {w for w in words if len(w) > 3 and w not in _STOPWORDS}
+        return {w for w in words if len(w) > 3 and w not in STOPWORDS}
 
     claim_words = keywords(claim)
     repo_text = f"{repo_name} {repo_desc} {readme[:500]}".replace("-", " ").replace("_", " ")
@@ -258,12 +216,32 @@ def _keyword_overlap(claim: str, repo_name: str, repo_desc: str, readme: str) ->
 
     if not claim_words:
         return 0.0
+    return len(claim_words & repo_words) / len(claim_words)
 
-    overlap = claim_words & repo_words
-    return len(overlap) / len(claim_words)
+
+def _extract_tech_from_claim(claim: str) -> set[str]:
+    """Return tech keywords mentioned in a project claim."""
+    claim_lower = claim.lower()
+    return {tech for tech in _TECH_KEYWORDS if tech in claim_lower}
+
+
+def _repo_has_tech(repo: dict, techs: set[str]) -> bool:
+    """Return True if the repo's text/languages mention any of the required techs.
+
+    If the claim names no specific tech, all repos pass (no false negatives).
+    """
+    if not techs:
+        return True
+    repo_text = (
+        f"{repo.get('readme_text', '')} "
+        f"{repo.get('description', '')} "
+        f"{' '.join(repo.get('languages', {}).keys())}"
+    ).lower()
+    return any(tech in repo_text for tech in techs)
 
 
 def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
+    """Return a list of per-project match results."""
     project_claims = [
         c for c in claims.get("claims", [])
         if c["category"] == "project" and not c.get("skip_github_check", False)
@@ -273,13 +251,16 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
     results = []
 
     for claim in project_claims:
-        project_text = claim["claim"]
+        claim_text = claim["claim"]
+        claim_techs = _extract_tech_from_claim(claim_text)
         best_match = None
         best_score = 0.0
 
         for repo in repos:
+            if not _repo_has_tech(repo, claim_techs):
+                continue
             score = _keyword_overlap(
-                project_text,
+                claim_text,
                 repo["repo_name"],
                 repo.get("description") or "",
                 repo.get("readme_text") or "",
@@ -288,7 +269,7 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
                 best_score = score
                 best_match = repo["repo_name"]
 
-        if best_score >= 0.25:
+        if best_score >= PROJECT_MATCH_THRESHOLD:
             results.append({
                 "claimed_project": claim["claim"],
                 "matched_repo": best_match,
@@ -299,7 +280,7 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
                 "github_username": username,
             })
         else:
-            flag, note = _classify_unmatched(project_text.lower(), company_names)
+            flag, note = _classify_unmatched(claim["claim"].lower(), company_names)
             results.append({
                 "claimed_project": claim["claim"],
                 "matched_repo": None,
@@ -314,12 +295,12 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# LLM claim verification (projects + skills only, never experience)
+# LLM claim verification
 # ---------------------------------------------------------------------------
 
 _SYSTEM = """\
 You are a senior technical recruiter verifying resume claims against GitHub activity.
-IMPORTANT: Only verify claims from the projects and skills sections. Never verify experience/job claims — those involve corporate private repos.
+Only verify claims from the projects and skills sections. Never verify experience/job claims.
 
 TEAM CLAIMS ("led team", "collaborated", "managed engineers") from projects section:
 - If ALL repos have 0 co-contributors → "contradicted", flag TEAM_CLAIM_SOLO_REPOS
@@ -330,7 +311,7 @@ LANGUAGE EXPERIENCE CLAIMS ("X years of Python", "proficient in React since 2020
 PROJECT CLAIMS ("built X", "created Y"):
 - If no matching repo → "unverifiable" (private repos may exist)
 
-SKILL CLAIMS: "supported" if language in any repo, else "unverifiable"
+SKILL CLAIMS: "supported" if language appears in any repo, else "unverifiable"
 
 AI CODE: If repo ai_likelihood >= 0.7, note in contradicting_evidence for project claims on that repo.
 
@@ -345,8 +326,7 @@ Return JSON:
       "confidence": 0.0-1.0
     }
   ],
-  "overall_score": 0.0-1.0,
-  "summary": "2-3 sentence frank assessment. Note that experience claims were excluded from GitHub verification.",
+  "summary": "2-3 sentence frank assessment. Note that experience claims were excluded.",
   "interview_questions": ["one sharp question per contradicted claim only"]
 }
 """
@@ -390,6 +370,7 @@ def _build_llm_context(state: PipelineState) -> str:
 # ---------------------------------------------------------------------------
 
 def verify_coherence(state: PipelineState) -> PipelineState:
+    """Entry point called by the LangGraph pipeline."""
     state["current_agent"] = "coherence_verifier"
 
     if not state.get("resume_claims"):
@@ -419,7 +400,6 @@ def verify_coherence(state: PipelineState) -> PipelineState:
         data = json.loads(resp.choices[0].message.content)
         result = CoherenceReport(
             checks=[CoherenceCheck(**c) for c in data.get("checks", [])],
-            overall_score=float(data.get("overall_score", 0.0)),
             summary=data.get("summary", ""),
             interview_questions=data.get("interview_questions", []),
         )

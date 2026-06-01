@@ -1,14 +1,23 @@
+"""Pydantic models for the VerifAI pipeline.
+
+Grouped by domain: GitHub → Resume → AI Detection → Coherence → Reports.
+All inter-agent data flows through these models — never raw dicts.
+"""
+
 from datetime import datetime
-from typing import Any
 from pydantic import BaseModel
 
+
+# ---------------------------------------------------------------------------
+# GitHub scraper (Agent 2)
+# ---------------------------------------------------------------------------
 
 class RepoData(BaseModel):
     repo_name: str
     created_at: datetime
     last_pushed_at: datetime
     days_since_created: int
-    languages: dict[str, int]
+    languages: dict[str, int]               # language name → bytes
     first_commit_date: datetime | None
     last_commit_date: datetime | None
     total_commits: int
@@ -19,7 +28,8 @@ class RepoData(BaseModel):
     has_readme: bool
     open_issues_count: int
     flags: list[dict[str, str]]
-    readme_text: str = ""          # first 2000 chars of README, for library matching
+    readme_text: str = ""                   # first 2000 chars, used by Agent 4 for skill matching
+    dependencies: dict = {}                 # {"python": [...], "javascript": [...]} from dep files
 
 
 class GitHubScrapeResult(BaseModel):
@@ -27,19 +37,23 @@ class GitHubScrapeResult(BaseModel):
     scraped_at: datetime
     account_created_at: datetime
     total_public_repos: int
-    languages_first_seen: dict[str, str]  # language -> ISO date string
+    languages_first_seen: dict[str, str]    # language → ISO date of first commit
     total_flags: int
     repos: list[RepoData]
 
 
+# ---------------------------------------------------------------------------
+# Resume parser (Agent 1)
+# ---------------------------------------------------------------------------
+
 class ResumeClaim(BaseModel):
     claim: str
-    category: str                        # "skill", "project", "role", "education", "achievement"
-    source_section: str = "other"        # "skills", "projects", "experience", "education", "other"
-    company: str | None = None           # employer, for experience claims only
-    skip_github_check: bool = False      # True for experience claims
-    confidence: float                    # 0.0–1.0
-    raw_text: str
+    category: str                           # skill | project | role | education | achievement
+    source_section: str = "other"           # skills | projects | experience | education | other
+    company: str | None = None              # employer name, for experience claims only
+    skip_github_check: bool = False         # True for experience claims (corporate = private repos)
+    confidence: float                       # 1.0 explicit, 0.7 implied, 0.4 vague
+    raw_text: str                           # verbatim excerpt from resume
 
 
 class ResumeClaimsResult(BaseModel):
@@ -47,9 +61,13 @@ class ResumeClaimsResult(BaseModel):
     claims: list[ResumeClaim]
 
 
+# ---------------------------------------------------------------------------
+# AI code detector (Agent 3)
+# ---------------------------------------------------------------------------
+
 class RepoAIScore(BaseModel):
     repo_name: str
-    ai_likelihood: float       # 0.0–1.0
+    ai_likelihood: float        # 0.0–1.0
     reasoning: str
     indicators: list[str]
     sampled_commit_count: int
@@ -61,15 +79,13 @@ class AIDetectionResult(BaseModel):
     summary: str
 
 
-class FlagEntry(BaseModel):
-    flag_type: str
-    description: str
-    evidence: str
-
+# ---------------------------------------------------------------------------
+# Coherence verifier (Agent 4)
+# ---------------------------------------------------------------------------
 
 class CoherenceCheck(BaseModel):
     claim: str
-    verdict: str           # "supported", "contradicted", "unverifiable"
+    verdict: str                        # supported | contradicted | unverifiable
     supporting_evidence: list[str]
     contradicting_evidence: list[str]
     confidence: float
@@ -77,17 +93,31 @@ class CoherenceCheck(BaseModel):
 
 class CoherenceReport(BaseModel):
     checks: list[CoherenceCheck]
-    overall_score: float           # 0.0–1.0
     summary: str
-    interview_questions: list[str] # one per contradicted claim
+    interview_questions: list[str]      # one per contradicted claim
+
+
+# ---------------------------------------------------------------------------
+# Report generator (Agent 5)
+# ---------------------------------------------------------------------------
+
+class TimelineFlag(BaseModel):
+    observation: str        # e.g. "Claims Python since 2021 → First commit: March 2024"
+    evidence: str           # specific dates or data that triggered this
+    interview_question: str # suggested question for the recruiter to ask
+
+
+class ActivityPatterns(BaseModel):
+    account_age: str            # e.g. "GitHub account created: 2024"
+    most_active_languages: list[str]
+    repo_velocity: str          # e.g. "3 repos created in last 20 days"
+    commit_pattern: str         # brief observation about commit distribution
 
 
 class RecruiterReport(BaseModel):
-    candidate: str
-    overall_risk: str      # "low", "medium", "high"
-    red_flags: list[FlagEntry]
-    summary: str
-    recommendation: str
+    overview: str
+    timeline_flags: list[TimelineFlag]
+    activity_patterns: ActivityPatterns
 
 
 class CandidateReport(BaseModel):
@@ -102,6 +132,3 @@ class FinalReport(BaseModel):
     candidate: CandidateReport
     generated_at: datetime
     pipeline_version: str = "0.1.0"
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")

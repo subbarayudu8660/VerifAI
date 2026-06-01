@@ -7,13 +7,11 @@ likelihood using OpenAI. Skips repos with no commit history.
 import json
 import sys
 
+from core.constants import MAX_PATCH_CHARS, SAMPLE_COMMITS
 from core.github_client import GitHubClient
 from core.llm import MODEL, get_client
 from core.models import AIDetectionResult, RepoAIScore
 from state import PipelineState
-
-_SAMPLE_COMMITS = 5
-_MAX_PATCH_CHARS = 3000
 
 _SYSTEM = """\
 You are an expert code reviewer specialising in detecting AI-generated code.
@@ -36,13 +34,13 @@ domain-specific shortcuts, messy exploratory commits.
 
 def _sample_patches(client: GitHubClient, username: str, repo_name: str, commit_shas: list[str]) -> str:
     patches: list[str] = []
-    for sha in commit_shas[:_SAMPLE_COMMITS]:
+    for sha in commit_shas[:SAMPLE_COMMITS]:
         try:
             detail = client.get_commit_detail(username, repo_name, sha)
             for f in detail.get("files", [])[:3]:
                 patch = f.get("patch", "")
                 if patch:
-                    patches.append(f"--- {f['filename']} ---\n{patch[:_MAX_PATCH_CHARS]}")
+                    patches.append(f"--- {f['filename']} ---\n{patch[:MAX_PATCH_CHARS]}")
         except Exception as exc:
             print(f"[ai_detector] skipping commit {sha}: {exc}", file=sys.stderr)
     return "\n\n".join(patches)
@@ -71,7 +69,7 @@ def detect_ai_code(state: PipelineState) -> PipelineState:
         print(f"[ai_detector] sampling {repo_name}", file=sys.stderr)
         try:
             commits = gh_client.get_commits(username, repo_name)
-            shas = [c["sha"] for c in commits[:_SAMPLE_COMMITS]]
+            shas = [c["sha"] for c in commits[:SAMPLE_COMMITS]]
             patches = _sample_patches(gh_client, username, repo_name, shas)
 
             if not patches:

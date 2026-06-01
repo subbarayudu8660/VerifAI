@@ -1,22 +1,25 @@
 """Agent 2 — GitHub Scraper.
 
 Fetches public repository data for a GitHub username, computes per-repo
-metrics, and attaches flags for suspicious patterns.
+metrics, attaches flags for suspicious patterns, and fetches dependency
+files (requirements.txt, package.json, pyproject.toml) for skill matching.
 
 Standalone usage:
     python -m agents.github_scraper <username>
 """
 
+import json
+import re
 import sys
 from datetime import datetime, timezone
 
+from core.constants import RECENT_CREATION_DAYS
 from core.flags import Flag, make_flag
 from core.github_client import GitHubClient
 from core.models import GitHubScrapeResult, RepoData
 from state import PipelineState
 
 _TODAY = datetime.now(timezone.utc)
-_RECENT_DAYS = 20
 
 
 def _parse_dt(s: str | None) -> datetime | None:
@@ -46,15 +49,13 @@ def _detect_flags(
     flags: list[dict[str, str]] = []
     created_at = _parse_dt(repo["created_at"])
 
-    # RECENT_CREATION
-    if created_at and _days_since(created_at) <= _RECENT_DAYS:
+    if created_at and _days_since(created_at) <= RECENT_CREATION_DAYS:
         flags.append(make_flag(
             Flag.RECENT_CREATION,
             "Repository created within the last 20 days.",
             f"created_at={repo['created_at']} ({_days_since(created_at)} days ago)",
         ))
 
-    # NO_COMMIT_HISTORY
     if len(commits) <= 1:
         flags.append(make_flag(
             Flag.NO_COMMIT_HISTORY,
@@ -62,7 +63,6 @@ def _detect_flags(
             f"total_commits={len(commits)}",
         ))
 
-    # FORK_NO_CONTRIBUTION — fork with no commits beyond fork point
     if repo.get("fork") and len(commits) == 0:
         flags.append(make_flag(
             Flag.FORK_NO_CONTRIBUTION,
@@ -70,14 +70,77 @@ def _detect_flags(
             f"is_fork=True, commits={len(commits)}",
         ))
 
-    # Track languages_first_seen globally for Agent 4 (coherence verifier)
     for lang in languages:
         if lang not in languages_first_seen and commits:
             first_commit_date = _parse_dt(commits[-1]["commit"]["committer"]["date"])
-            languages_first_seen[lang] = first_commit_date.date().isoformat() if first_commit_date else "unknown"
+            languages_first_seen[lang] = (
+                first_commit_date.date().isoformat() if first_commit_date else "unknown"
+            )
 
     return flags
 
+
+# ---------------------------------------------------------------------------
+# Dependency fetching
+# ---------------------------------------------------------------------------
+
+def _should_fetch_deps(repo: dict, commits: list, languages: dict) -> bool:
+    """Skip forks, near-empty repos, and notebook-only repos — not worth the API calls."""
+    if repo.get("fork"):
+        return False
+    if len(commits) < 10:
+        return False
+    if not languages:
+        return False
+    if list(languages.keys()) == ["Jupyter Notebook"]:
+        return False
+    return True
+
+
+def _fetch_dependencies(client: GitHubClient, owner: str, repo_name: str) -> dict:
+    """Fetch requirements.txt, package.json, and pyproject.toml; return parsed dep lists."""
+    python_deps: list[str] = []
+    js_deps: list[str] = []
+
+    # requirements.txt
+    content = client.get_file_contents(owner, repo_name, "requirements.txt")
+    if content:
+        for line in content.splitlines():
+            line = line.strip().lower()
+            if line and not line.startswith("#"):
+                pkg = re.split(r"[>=<!~\[]", line)[0].strip()
+                if pkg and len(pkg) > 1:
+                    python_deps.append(pkg)
+
+    # package.json
+    content = client.get_file_contents(owner, repo_name, "package.json")
+    if content:
+        try:
+            pkg_json = json.loads(content)
+            all_deps: dict = {}
+            all_deps.update(pkg_json.get("dependencies", {}))
+            all_deps.update(pkg_json.get("devDependencies", {}))
+            js_deps = [k.lower() for k in all_deps.keys()]
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    # pyproject.toml (fallback for Python projects)
+    if not python_deps:
+        content = client.get_file_contents(owner, repo_name, "pyproject.toml")
+        if content:
+            for line in content.splitlines():
+                matches = re.findall(r'["\']([a-z][a-z0-9\-_]+)', line.lower())
+                python_deps.extend(matches)
+
+    return {
+        "python": list(set(python_deps)),
+        "javascript": list(set(js_deps)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Repo builder
+# ---------------------------------------------------------------------------
 
 def _build_repo_data(
     repo: dict,
@@ -87,13 +150,13 @@ def _build_repo_data(
     owner: str,
     languages_first_seen: dict[str, str],
     readme_text: str = "",
+    dependencies: dict | None = None,
 ) -> RepoData:
     created_at = _parse_dt(repo["created_at"])
     last_pushed = _parse_dt(repo.get("pushed_at") or repo["created_at"])
     first_commit = _parse_dt(commits[-1]["commit"]["committer"]["date"]) if commits else None
     last_commit = _parse_dt(commits[0]["commit"]["committer"]["date"]) if commits else None
     others = [c["login"] for c in contributors if c.get("login", "").lower() != owner.lower()]
-
     flags = _detect_flags(repo, commits, contributors, languages, owner, languages_first_seen)
 
     return RepoData(
@@ -113,10 +176,16 @@ def _build_repo_data(
         open_issues_count=repo.get("open_issues_count", 0),
         flags=flags,
         readme_text=readme_text,
+        dependencies=dependencies or {"python": [], "javascript": []},
     )
 
 
+# ---------------------------------------------------------------------------
+# Agent entry point
+# ---------------------------------------------------------------------------
+
 def scrape_github(state: PipelineState) -> PipelineState:
+    """Entry point called by the LangGraph pipeline."""
     state["current_agent"] = "github_scraper"
     username = state["github_username"]
     client = GitHubClient()
@@ -144,7 +213,16 @@ def scrape_github(state: PipelineState) -> PipelineState:
             contributors = client.get_contributors(username, name)
             languages = client.get_languages(username, name)
             readme_text = client.get_readme(username, name)
-            rd = _build_repo_data(repo, commits, contributors, languages, username, languages_first_seen, readme_text)
+
+            deps: dict = {"python": [], "javascript": []}
+            if _should_fetch_deps(repo, commits, languages):
+                print(f"[scraper] fetching deps for {name}", file=sys.stderr)
+                deps = _fetch_dependencies(client, username, name)
+
+            rd = _build_repo_data(
+                repo, commits, contributors, languages,
+                username, languages_first_seen, readme_text, deps,
+            )
             repo_results.append(rd)
         except Exception as exc:
             print(f"[scraper] WARNING: skipping {name}: {exc}", file=sys.stderr)
@@ -171,8 +249,6 @@ def scrape_github(state: PipelineState) -> PipelineState:
 # Standalone CLI entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    import json
-
     if len(sys.argv) < 2:
         print("Usage: python -m agents.github_scraper <github_username>", file=sys.stderr)
         sys.exit(1)
@@ -185,6 +261,8 @@ if __name__ == "__main__":
         "github_data": None,
         "ai_detection": None,
         "coherence_report": None,
+        "skill_verification": None,
+        "project_matches": None,
         "final_report": None,
         "errors": [],
         "current_agent": "",

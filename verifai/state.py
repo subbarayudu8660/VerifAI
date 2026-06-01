@@ -2,14 +2,14 @@ from typing import TypedDict
 
 
 class PipelineState(TypedDict):
-    github_username: str
-    resume_raw: str | None
-    resume_claims: dict | None        # Agent 1 output
-    github_data: dict | None          # Agent 2 output
-    ai_detection: dict | None         # Agent 3 output
-    coherence_report: dict | None     # Agent 4 output
-    skill_verification: list[dict] | None   # Agent 4 output — per-skill confidence
-    project_matches: list[dict] | None      # Agent 4 output — per-project match
-    final_report: dict | None         # Agent 5 output
-    errors: list[str]
-    current_agent: str
+    github_username: str                    # Input — provided by user
+    resume_raw: str | None                  # Input — provided by user (plain text extracted from PDF)
+    resume_claims: dict | None              # Agent 1 output → Agent 4 input
+    github_data: dict | None                # Agent 2 output → Agent 3, 4, 5 input
+    ai_detection: dict | None               # Agent 3 output → Agent 5 input
+    skill_verification: list[dict] | None   # Agent 4 output → Agent 5 input (per-skill evidence)
+    project_matches: list[dict] | None      # Agent 4 output → Agent 5 input (per-project match)
+    coherence_report: dict | None           # Agent 4 output → Agent 5 input (LLM verdicts)
+    final_report: dict | None               # Agent 5 output → Frontend
+    errors: list[str]                       # All agents append here; pipeline never halts on error
+    current_agent: str                      # Set by each agent on entry; Frontend polls this for progress
