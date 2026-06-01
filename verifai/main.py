@@ -7,7 +7,11 @@ app = FastAPI(title="VerifAI", version="0.1.0", description="Technical candidate
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://verif-ai-nine.vercel.app",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
