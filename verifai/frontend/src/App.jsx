@@ -1,16 +1,11 @@
 import React, { useCallback, useState } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import LandingPage from "./LandingPage.jsx";
 import ReportView from "./components/ReportView.jsx";
 import StatusPoll from "./components/StatusPoll.jsx";
 import UploadForm from "./components/UploadForm.jsx";
 
-const s = {
-  wrapper: { minHeight: "100vh", padding: "2rem 1rem" },
-  header: { textAlign: "center", marginBottom: "2rem" },
-  logo: { fontSize: 28, fontWeight: 800, color: "#6366f1", letterSpacing: -1 },
-  tagline: { color: "#6b7280", fontSize: 15, marginTop: 4 },
-};
-
-export default function App() {
+function VerifyPage() {
   const [phase, setPhase] = useState("form"); // "form" | "polling" | "done"
   const [runId, setRunId] = useState(null);
   const [result, setResult] = useState(null);
@@ -32,15 +27,29 @@ export default function App() {
   }, []);
 
   return (
-    <div style={s.wrapper}>
-      <div style={s.header}>
-        <div style={s.logo}>VerifAI</div>
-        <div style={s.tagline}>Automated technical candidate verification</div>
+    <div style={{ minHeight: "100vh", padding: "2rem 1rem", background: "#f9fafb" }}>
+      <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+        <a href="/" style={{ textDecoration: "none" }}>
+          <span style={{ fontSize: 24, fontWeight: 800, color: "#6366f1", letterSpacing: -0.5 }}>
+            VerifAI
+          </span>
+        </a>
       </div>
-
       {phase === "form" && <UploadForm onStarted={handleStarted} />}
       {phase === "polling" && <StatusPoll runId={runId} onComplete={handleComplete} />}
       {phase === "done" && <ReportView state={result} onReset={handleReset} />}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/verify" element={<VerifyPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
