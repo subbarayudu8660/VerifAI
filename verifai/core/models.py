@@ -104,20 +104,27 @@ class CoherenceReport(BaseModel):
 class TimelineFlag(BaseModel):
     observation: str        # e.g. "Claims Python since 2021 → First commit: March 2024"
     evidence: str           # specific dates or data that triggered this
-    interview_question: str # suggested question for the recruiter to ask
+    interview_question: str # must reference specific dates and evidence from above
 
 
 class ActivityPatterns(BaseModel):
     account_age: str            # e.g. "GitHub account created: 2024"
     most_active_languages: list[str]
     repo_velocity: str          # e.g. "3 repos created in last 20 days"
-    commit_pattern: str         # brief observation about commit distribution
+    commit_pattern: str         # neutral observation about commit frequency/distribution
+
+
+class ProjectInterviewQuestion(BaseModel):
+    project: str                # claimed project name from resume
+    matched_repo: str | None    # matched GitHub repo name, or None if unmatched
+    interview_question: str     # must reference specific repo details or explain absence
 
 
 class RecruiterReport(BaseModel):
     overview: str
     timeline_flags: list[TimelineFlag]
     activity_patterns: ActivityPatterns
+    project_interview_questions: list[ProjectInterviewQuestion] = []
 
 
 class CandidateReport(BaseModel):

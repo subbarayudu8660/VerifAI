@@ -10,6 +10,7 @@ Synthesises all prior agent outputs into:
 """
 
 import json
+import re
 from datetime import datetime, timezone
 
 from core.llm import MODEL, get_client
@@ -17,6 +18,7 @@ from core.models import (
     ActivityPatterns,
     CandidateReport,
     FinalReport,
+    ProjectInterviewQuestion,
     RecruiterReport,
     TimelineFlag,
 )
@@ -42,7 +44,7 @@ Return JSON with exactly this structure:
     {
       "observation": "Claims Python since 2021 -> First Python commit: March 2024",
       "evidence": "specific dates or data that triggered this",
-      "interview_question": "Walk me through your Python work before 2024 — were these in private repos?"
+      "interview_question": "Your first Python commit on GitHub was March 2024, but your resume claims experience since 2021 — can you walk us through your Python work before that? Were these in private repos?"
     }
   ],
 
@@ -53,6 +55,14 @@ Return JSON with exactly this structure:
     "commit_pattern": "neutral observation about commit frequency and distribution only — e.g. 'Commits concentrated in recent months with sparse historical activity'. Never mention AI, suspicious, or fraud."
   },
 
+  "project_interview_questions": [
+    {
+      "project": "claimed project name from resume",
+      "matched_repo": "repo name if matched, or null if not",
+      "interview_question": "For matched: reference the specific repo name, commit count, and something observable — e.g. 'In your notes-chatbot repo you have 4 commits over 2 weeks — can you walk me through how you built the RAG pipeline and what embedding model you chose?' For unmatched: 'Your resume mentions [project] but we couldn't find a matching public repo — can you tell us where this code lives and walk us through it?'"
+    }
+  ],
+
   "candidate": {
     "candidate": "name or github username",
     "strengths": ["list of genuine strengths observed"],
@@ -61,21 +71,61 @@ Return JSON with exactly this structure:
   }
 }
 
+project_interview_questions rules:
+- One entry per project claim (matched or unmatched)
+- Matched projects: reference the actual repo name, commit count, languages — make it specific
+- Unmatched projects: ask where the code lives and to walk through the work
+- Never skip a project — every project claim gets a question
+
+FORKED REPOS — if a matched repo is marked [FORK] in the context:
+- NEVER ask "how did you build this" or "walk me through creating this"
+- ALWAYS ask about their specific contribution to the existing codebase
+- Reference the fork status explicitly in the question
+- Good: "Your [repo] is a fork — what specific changes or additions did you make to the original codebase?"
+- Good: "What did you add or modify in [repo], and how does your version differ from the original?"
+- Bad: "Walk me through how you built [repo]..." (implies they created it from scratch)
+
+NEVER mention "Jupyter Notebook" in any interview question — it is a file format, not a technology.
+If a repo's primary language is Jupyter Notebook, reference Python instead.
+Focus questions on: what the project does, specific technical decisions made,
+scale or metrics mentioned in the README, or the actual languages and frameworks used.
+
 Rules:
 - Never use the words: fraudulent, suspicious, lying, fake, risk, score
 - Every timeline flag must have a specific interview question
 - Only emit timeline flags when there is real evidence — do not fabricate
-- If no timeline flags exist, return an empty array
 - Overview must be neutral and factual
 - When evidence is absent, note it may be explained by private or corporate repos
 
-CRITICAL RULE FOR timeline_flags:
-Only generate a flag if the resume EXPLICITLY claims a skill for a specific time
-period or number of years (e.g. "5 years of Python", "Python since 2019").
-If the resume just lists "Python" with no timeframe → NO flag.
-Only flag when the resume states a duration or start year AND GitHub contradicts it.
-No explicit resume time claim = no timeline flag for that skill.
+HARD RULE — timeline_flags:
+The user context will contain a section "TIMELINE ANALYSIS" that either lists
+skills with explicit time claims OR states that none exist.
+If the context says "No skills with explicit time claims" → you MUST return
+timeline_flags as an empty array []. No exceptions. Do not invent flags.
+Only generate a timeline flag for a skill that appears in the TIMELINE ANALYSIS
+section AND whose GitHub first-seen date contradicts the claimed timeframe.
 """
+
+
+def _has_time_claim(skill: str, resume_claims: dict) -> bool:
+    """Return True if any resume claim's raw_text explicitly states a timeframe for this skill.
+
+    Matches patterns like: "5 years of Python", "Python since 2019",
+    "since 2020 ... React", "3+ years experience in Node.js".
+    A bare skill listing ("Python", "React") returns False.
+    """
+    skill_lower = skill.lower()
+    patterns = [
+        r'\d+\+?\s*years?\s*(?:of\s*)?' + re.escape(skill_lower),
+        re.escape(skill_lower) + r'\s*since\s*\d{4}',
+        r'since\s*\d{4}[^.]*' + re.escape(skill_lower),
+        r'\d+\+?\s*years?[^.]*' + re.escape(skill_lower),
+    ]
+    for claim in resume_claims.get("claims", []):
+        raw = claim.get("raw_text", "").lower()
+        if any(re.search(p, raw, re.IGNORECASE) for p in patterns):
+            return True
+    return False
 
 
 def _build_context(state: PipelineState) -> str:
@@ -100,25 +150,53 @@ def _build_context(state: PipelineState) -> str:
     parts.append(f"Languages first seen: {github.get('languages_first_seen')}")
     for repo in github.get("repos", []):
         flags = [f["flag_type"] for f in repo.get("flags", [])]
+        fork_label = " [FORK]" if repo.get("is_fork") else ""
         parts.append(
-            f"  {repo['repo_name']}: {repo['total_commits']} commits, "
+            f"  {repo['repo_name']}{fork_label}: {repo['total_commits']} commits, "
             f"languages={list(repo['languages'].keys())}, "
             f"created={repo.get('created_at', '')[:10]}, flags={flags}"
         )
 
     skills = state.get("skill_verification") or []
+    claims = state.get("resume_claims") or {}
     if skills:
         supported = [s["skill"] for s in skills if s["evidence_found"]]
         no_evidence = [s["skill"] for s in skills if not s["evidence_found"]]
         parts.append(f"\nSkill verification — supported: {supported}")
         parts.append(f"Skill verification — no public evidence: {no_evidence}")
 
+        # Pre-filter: only pass skills that have explicit time claims in the resume
+        skills_with_time_claims = [
+            s["skill"] for s in skills if _has_time_claim(s["skill"], claims)
+        ]
+        parts.append("\nTIMELINE ANALYSIS:")
+        if skills_with_time_claims:
+            parts.append(
+                f"Skills with explicit time claims in resume (ONLY these may generate timeline flags): "
+                f"{skills_with_time_claims}"
+            )
+            parts.append(
+                "Compare each against languages_first_seen above. "
+                "Only flag if GitHub first-seen date contradicts the claimed timeframe."
+            )
+        else:
+            parts.append(
+                "No skills with explicit time claims found in resume. "
+                "timeline_flags MUST be an empty array []."
+            )
+
     projects = state.get("project_matches") or []
     if projects:
+        # Build a lookup so we can annotate matched repos with fork status
+        repo_index = {r["repo_name"]: r for r in github.get("repos", [])}
         parts.append("\nProject matches:")
         for p in projects:
             if p["matched_repo"]:
-                parts.append(f"  '{p['claimed_project']}' → matched: {p['matched_repo']}")
+                matched_repo = repo_index.get(p["matched_repo"], {})
+                fork_label = " [FORK — ask about contribution, not creation]" if matched_repo.get("is_fork") else ""
+                parts.append(
+                    f"  '{p['claimed_project']}' → matched: {p['matched_repo']}{fork_label}"
+                )
             else:
                 parts.append(f"  '{p['claimed_project']}' → {p['flag']}: {p['note']}")
 
@@ -173,6 +251,10 @@ def generate_report(state: PipelineState) -> PipelineState:
                     repo_velocity=ap.get("repo_velocity", ""),
                     commit_pattern=ap.get("commit_pattern", ""),
                 ),
+                project_interview_questions=[
+                    ProjectInterviewQuestion(**q)
+                    for q in data.get("project_interview_questions", [])
+                ],
             ),
             candidate=CandidateReport(
                 candidate=c_data.get("candidate", candidate_name),

@@ -1,7 +1,7 @@
-const BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export async function startVerification(githubUsername, resumeText) {
-  const res = await fetch(`${BASE}/verify`, {
+  const res = await fetch(`${API_BASE}/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ github_username: githubUsername, resume_text: resumeText || null }),
@@ -11,7 +11,7 @@ export async function startVerification(githubUsername, resumeText) {
 }
 
 export async function getResults(runId) {
-  const res = await fetch(`${BASE}/results/${runId}`);
+  const res = await fetch(`${API_BASE}/results/${runId}`);
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
   return res.json(); // PipelineState
 }

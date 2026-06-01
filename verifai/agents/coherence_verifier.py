@@ -14,7 +14,7 @@ import re
 
 from core.constants import (
     CLASSIFIED_HINTS,
-    PRIVATE_HINTS,
+    CORPORATE_HINTS,
     PROJECT_MATCH_THRESHOLD,
     SKILL_ALIASES,
     SKIP_SKILLS,
@@ -160,37 +160,25 @@ def _check_skills(claims: dict, github: dict) -> list[dict]:
 # Project matching
 # ---------------------------------------------------------------------------
 
-def _company_names(claims: dict) -> list[str]:
-    """Extract employer names from experience claims for private-repo classification."""
-    names = []
-    for c in claims.get("claims", []):
-        if c.get("company"):
-            names.append(c["company"].lower())
-        if c.get("source_section") == "experience":
-            names.append(c["claim"].lower())
-    return names
+def _classify_unmatched(claim: str) -> tuple[str, str]:
+    """Classify a project claim that has no matching public repo.
 
-
-def _classify_unmatched(project_text: str, company_names: list[str]) -> tuple[str, str]:
-    """Classify a project claim that has no matching public repo."""
-    lower = project_text.lower()
+    Checks classified/government signals first, then corporate signals.
+    Only falls through to CLAIM_NO_EVIDENCE if neither set matches.
+    """
+    lower = claim.lower()
 
     if any(h in lower for h in CLASSIFIED_HINTS):
         return (
             "LIKELY_PRIVATE_CLASSIFIED",
             "Classified/government work — verify directly with candidate.",
         )
-    if any(name in lower for name in company_names if len(name) > 3):
+    if any(h in lower for h in CORPORATE_HINTS):
         return (
             "LIKELY_PRIVATE_CORPORATE",
-            "Work done at a named employer — likely in a private/corporate repo.",
+            "Corporate/private work — likely in a private repo. Ask candidate directly.",
         )
-    if any(w in lower for w in ("internship", "intern", "contracted", "corporation", "inc.", "llc")):
-        return (
-            "LIKELY_PRIVATE_CORPORATE",
-            "Corporate/contracted work — likely in a private repo.",
-        )
-    return ("CLAIM_NO_EVIDENCE", "No matching public repo found.")
+    return ("CLAIM_NO_EVIDENCE", "No matching repo found.")
 
 
 _TECH_KEYWORDS = {
@@ -247,7 +235,6 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
         if c["category"] == "project" and not c.get("skip_github_check", False)
     ]
     repos = github.get("repos", [])
-    company_names = _company_names(claims)
     results = []
 
     for claim in project_claims:
@@ -280,7 +267,7 @@ def _check_projects(claims: dict, github: dict, username: str) -> list[dict]:
                 "github_username": username,
             })
         else:
-            flag, note = _classify_unmatched(claim["claim"].lower(), company_names)
+            flag, note = _classify_unmatched(claim["claim"])
             results.append({
                 "claimed_project": claim["claim"],
                 "matched_repo": None,

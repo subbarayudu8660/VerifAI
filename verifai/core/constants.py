@@ -122,13 +122,17 @@ PROJECT_MATCH_THRESHOLD = 0.35
 # Coherence verifier — unmatched project classification
 # ---------------------------------------------------------------------------
 
-# Words in a project claim that suggest classified/government work
+# Words in a project claim that suggest classified/government work (checked first)
 CLASSIFIED_HINTS = [
-    "classified", "secret", "top secret", "itar", "dod", "darpa", "satellite",
+    "classified", "secret", "top secret", "itar", "dod", "darpa",
+    "satellite", "defense", "government", "federal", "mitre",
 ]
 
 # Words that suggest corporate private-repo work
-PRIVATE_HINTS = [
-    "dod", "darpa", "mitre", "classified", "defense", "government", "itar",
-    "secret", "federal", "lockheed", "raytheon", "booz", "palantir", "saic",
+CORPORATE_HINTS = [
+    "optimized", "molecular", "property", "enterprise", "production",
+    "deployed", "client", "company", "organization", "business",
+    "automated", "pipeline", "system", "platform", "infrastructure",
+    "internship", "intern", "contracted", "corporation", "inc.", "llc",
+    "lockheed", "raytheon", "booz", "palantir", "saic", "darpa", "mitre",
 ]

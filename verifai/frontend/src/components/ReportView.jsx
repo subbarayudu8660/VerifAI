@@ -280,9 +280,9 @@ function ActivityPatterns({ recruiter }) {
 // ---------------------------------------------------------------------------
 
 const PROJECT_FLAG_DISPLAY = {
-  CLAIM_NO_EVIDENCE:         { icon: "✗", color: "#dc2626" },
+  CLAIM_NO_EVIDENCE:         { icon: "✗", color: "#dc2626", note: "No matching repo found" },
   LIKELY_PRIVATE_CORPORATE:  { icon: "⚠", color: "#d97706", note: "Corporate/private repo expected" },
-  LIKELY_PRIVATE_CLASSIFIED: { icon: "🔒", color: "#6b7280", note: "Classified/private work — verify directly" },
+  LIKELY_PRIVATE_CLASSIFIED: { icon: "🔒", color: "#6b7280", note: "Classified/private work expected" },
 };
 
 function ProjectMatches({ matches, hasResume }) {
@@ -316,7 +316,7 @@ function ProjectMatches({ matches, hasResume }) {
                 </>
               ) : (
                 <span style={{ color: fd.color, marginLeft: 6 }}>
-                  → {fd.note || "No matching repo found"}
+                  → {fd.note}
                 </span>
               )}
               {m.note && !matched && (
@@ -391,6 +391,73 @@ function RepoTable({ repos, username }) {
 }
 
 // ---------------------------------------------------------------------------
+// Interview Questions
+// ---------------------------------------------------------------------------
+
+function InterviewQuestions({ recruiter, hasResume }) {
+  if (!hasResume || !recruiter) return null;
+
+  const items = [];
+
+  (recruiter.timeline_flags || []).forEach((f) => {
+    if (f.interview_question) {
+      items.push({ context: "Re: Timeline", question: f.interview_question });
+    }
+  });
+
+  (recruiter.project_interview_questions || []).forEach((q) => {
+    const context = q.matched_repo
+      ? `Re: ${q.matched_repo}`
+      : `Re: Unmatched project "${q.project}"`;
+    items.push({ context, question: q.interview_question });
+  });
+
+  if (items.length === 0) return null;
+
+  return (
+    <div style={card}>
+      <div style={sectionTitle}>Interview Questions</div>
+      {items.map((item, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            gap: 16,
+            marginBottom: i < items.length - 1 ? 20 : 0,
+          }}
+        >
+          <div style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: "#9ca3af",
+            flexShrink: 0,
+            minWidth: 20,
+            paddingTop: 1,
+          }}>
+            {i + 1}.
+          </div>
+          <div>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#9ca3af",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 5,
+            }}>
+              {item.context}
+            </div>
+            <div style={{ fontSize: 14, color: "#1f2937", lineHeight: 1.6 }}>
+              "{item.question}"
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Debug
 // ---------------------------------------------------------------------------
 
@@ -432,6 +499,7 @@ export default function ReportView({ state, onReset }) {
       <SkillEvidence skills={skill_verification} hasResume={hasResume} />
       <ActivityPatterns recruiter={recruiter} />
       <ProjectMatches matches={project_matches} hasResume={hasResume} />
+      <InterviewQuestions recruiter={recruiter} hasResume={hasResume} />
       <RepoTable repos={github_data?.repos} username={state.github_username} />
       <DebugInfo errors={errors} />
     </div>
