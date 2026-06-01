@@ -39,10 +39,6 @@ npm run dev
 # → http://localhost:5173
 ```
 
-**Vercel env var required for hosted deployment:**
-Set `VITE_API_URL=https://verifai-production-d9d4.up.railway.app` in the Vercel dashboard.
-`api.js` reads `import.meta.env.VITE_API_URL || "http://localhost:8000"` — already fixed.
-
 ---
 
 ## Environment Variables
@@ -50,9 +46,13 @@ Set `VITE_API_URL=https://verifai-production-d9d4.up.railway.app` in the Vercel 
 `verifai/.env` (never commit):
 ```
 GITHUB_TOKEN=ghp_...
-OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
 ```
-Set both in Railway dashboard. Vercel needs `VITE_API_URL` only.
+
+Railway dashboard needs: `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`
+Vercel dashboard needs: `VITE_API_URL=https://verifai-production-d9d4.up.railway.app` (no trailing slash)
+
+`api.js` reads `import.meta.env.VITE_API_URL || "http://localhost:8000"` — already set up.
 
 ---
 
@@ -61,10 +61,10 @@ Set both in Railway dashboard. Vercel needs `VITE_API_URL` only.
 ```
 verifAI/                            ← project root (CLAUDE.md here, gitignored by inner repo)
 └── verifai/                        ← git root
-    ├── main.py                     ← FastAPI app + CORS (wiring only)
+    ├── main.py                     ← FastAPI app + CORS (localhost + Vercel URL allowed)
     ├── pipeline.py                 ← LangGraph StateGraph + stream_pipeline()
     ├── state.py                    ← PipelineState TypedDict with per-field comments
-    ├── requirements.txt
+    ├── requirements.txt            ← anthropic (not openai)
     ├── .env                        ← gitignored
     ├── .env.example
     ├── agents/
@@ -78,7 +78,7 @@ verifAI/                            ← project root (CLAUDE.md here, gitignored
     │   ├── models.py               ← All Pydantic models
     │   ├── flags.py                ← Flag enum + make_flag()
     │   ├── github_client.py        ← GitHub API wrapper + get_file_contents()
-    │   └── llm.py                  ← OpenAI client factory
+    │   └── llm.py                  ← Anthropic client + MODEL + extract_json()
     ├── api/
     │   └── routes.py               ← POST /verify, GET /results/{run_id}
     ├── outputs/                    ← Per-run JSON (gitignored)
@@ -99,12 +99,33 @@ verifAI/                            ← project root (CLAUDE.md here, gitignored
 
 ---
 
+## LLM Stack (`core/llm.py`)
+
+- **Provider:** Anthropic
+- **Model:** `claude-sonnet-4-20250514`
+- **Client:** `anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))`
+- **Call pattern used in all agents:**
+```python
+resp = client.messages.create(
+    model=MODEL,
+    max_tokens=...,       # 1024 (ai_detector), 2000 (resume_parser), 4096 (coherence, report)
+    system=_SYSTEM,       # system prompt goes here, NOT as a message
+    messages=[{"role": "user", "content": ...}],
+)
+data = json.loads(extract_json(resp.content[0].text))
+```
+- **`extract_json(text)`** — strips ` ```json ``` ` fences Claude sometimes wraps responses in
+
+**Do NOT use:** `client.chat.completions.create(...)`, `response_format={"type": "json_object"}`, `resp.choices[0].message.content` — these are OpenAI patterns and will break.
+
+---
+
 ## 5-Agent Pipeline
 
 State flows through `PipelineState` (TypedDict). Each agent sets `state["current_agent"]` on entry — frontend polls this for live progress.
 
 ### Agent 1 — Resume Parser (`agents/resume_parser.py`)
-- Calls OpenAI to extract structured claims from raw resume text
+- Calls Claude to extract structured claims from raw resume text
 - Each claim: `claim`, `category` (skill/project/role/education/achievement), `source_section`, `skip_github_check`, `confidence`, `raw_text`
 - Experience section claims tagged `skip_github_check: true` — never checked against GitHub
 - Skills extracted individually, never grouped
@@ -117,36 +138,38 @@ State flows through `PipelineState` (TypedDict). Each agent sets `state["current
   - `pyproject.toml` → Python deps fallback
 - Flags: `RECENT_CREATION` (≤20 days), `NO_COMMIT_HISTORY` (0–1 commits), `FORK_NO_CONTRIBUTION`
 - Standalone: `python -m agents.github_scraper <username>`
+- No LLM calls — GitHub API only
 
 ### Agent 3 — AI Code Detector (`agents/ai_code_detector.py`)
 - Samples up to 5 recent commit diffs per repo (max 3000 chars each)
-- Scores each repo for AI-generation likelihood via OpenAI
+- Scores each repo for AI-generation likelihood via Claude (`max_tokens=1024`)
 - Qualitative signals only — no numeric score shown to users
 
 ### Agent 4 — Coherence Verifier (`agents/coherence_verifier.py`)
 - **Skill matching** — `_skill_in_repo()` checks in priority order:
   1. Dependency files (explicit package in requirements.txt / package.json)
-  2. GitHub language API (strong for language-level skills)
+  2. GitHub language API
   3. README / description / repo name text
   4. Alias match: language alias must match AND skill keyword in text
 - **Project matching** — `_keyword_overlap()`: keyword set intersection, threshold 0.35. Tech stack cross-validation: if claim mentions React/Python etc., repo must also mention it.
-- **Unmatched project classification** — keyword-based, no company name extraction:
+- **Unmatched project classification** — keyword-based only:
   - `CLASSIFIED_HINTS` match → `LIKELY_PRIVATE_CLASSIFIED`
   - `CORPORATE_HINTS` match → `LIKELY_PRIVATE_CORPORATE`
   - Neither → `CLAIM_NO_EVIDENCE`
 - Skips experience section entirely
+- LLM call: `max_tokens=4096`
 
 ### Agent 5 — Report Generator (`agents/report_generator.py`)
-- Pre-filters timeline flags deterministically before calling OpenAI:
-  - `_has_time_claim(skill, resume_claims)` — regex patterns for "X years of Python", "Python since 2019" etc.
-  - Injects `TIMELINE ANALYSIS` section into context: lists skills with time claims, or states "must be []"
-- Annotates forked repos with `[FORK]` in context so LLM asks about contributions not creation
-- Annotates matched project lines with `[FORK — ask about contribution, not creation]` where applicable
+- **Pre-filters timeline flags deterministically** before Claude call:
+  - `_has_time_claim(skill, resume_claims)` — regex for "X years of Python", "Python since 2019"
+  - Injects `TIMELINE ANALYSIS` section into context; if no time claims → context says "must be []"
+- **Annotates forks** in context: `[FORK]` per repo, `[FORK — ask about contribution, not creation]` per matched project
 - Produces `RecruiterReport` (overview, timeline_flags, activity_patterns, project_interview_questions) and `CandidateReport`
+- LLM call: `max_tokens=4096`
 
 ### LangGraph wiring (`pipeline.py`)
 - `parse_resume → scrape_github` → conditional: if `github_data is None` → `generate_report`, else → `detect_ai_code → verify_coherence → generate_report`
-- `stream_pipeline()` uses `_compiled.stream(stream_mode="values")` — yields full state after each agent, so `routes.py` updates `_results[run_id]` live
+- `stream_pipeline()` uses `_compiled.stream(stream_mode="values")` — yields full state after each agent so `routes.py` updates `_results[run_id]` live
 
 ---
 
@@ -174,8 +197,6 @@ FinalReport               ← { recruiter, candidate, generated_at }
 
 ## Constants (`core/constants.py`)
 
-All hardcoded values — never inline in agent files:
-
 | Constant | Value | Used by |
 |---|---|---|
 | `RECENT_CREATION_DAYS` | 20 | github_scraper |
@@ -183,43 +204,34 @@ All hardcoded values — never inline in agent files:
 | `MAX_PATCH_CHARS` | 3000 | ai_code_detector |
 | `PROJECT_MATCH_THRESHOLD` | 0.35 | coherence_verifier |
 | `SKIP_SKILLS` | ~20 tools (git, Jira, Slack…) | coherence_verifier |
-| `SKILL_ALIASES` | ~50 skills | coherence_verifier |
-| `STOPWORDS` | common words excluded from keyword overlap | coherence_verifier |
-| `CLASSIFIED_HINTS` | gov/military keywords | coherence_verifier |
-| `CORPORATE_HINTS` | enterprise/production/business keywords | coherence_verifier |
-
-**`SKILL_ALIASES` design:** Empty list `[]` means text-match only (no language pre-filter). ML/AI libraries, databases, auth patterns all require explicit text confirmation — prevents "LangChain" matching every Python repo.
-
-**`CORPORATE_HINTS`** covers both semantic signals ("enterprise", "production", "pipeline", "infrastructure") and structural signals ("internship", "llc", "inc.") and named contractors ("palantir", "saic", etc.).
+| `SKILL_ALIASES` | ~50 skills → language aliases | coherence_verifier |
+| `STOPWORDS` | common words filtered from keyword overlap | coherence_verifier |
+| `CLASSIFIED_HINTS` | gov/military/classified keywords | coherence_verifier |
+| `CORPORATE_HINTS` | enterprise/production/business + contractor names | coherence_verifier |
 
 ---
 
-## Report Generator Prompt Rules (Agent 5)
-
-Key rules baked into the prompt and enforced deterministically:
+## Report Generator Prompt Rules
 
 **Timeline flags:**
-- Pre-filtered by `_has_time_claim()` before LLM sees data
-- Context explicitly says which skills have time claims (or states "must be []")
-- LLM hard rule: if TIMELINE ANALYSIS says none, return `[]` — no exceptions
+- `_has_time_claim()` pre-filters deterministically — LLM never sees ambiguous cases
+- Context injects explicit TIMELINE ANALYSIS section; hard rule: if empty → return `[]`
 
 **Project interview questions:**
-- One per project claim (matched or unmatched)
-- Forked repos: NEVER ask "how did you build this" — ALWAYS ask about specific contribution
-- `[FORK]` and `[FORK — ask about contribution, not creation]` annotations injected into context
-- NEVER mention "Jupyter Notebook" — reference Python instead
-- Unmatched: ask where code lives and to walk through it
+- One per project (matched or unmatched)
+- Forked repos → ask about contribution, not creation (context annotated, prompt rules explicit)
+- Never mention "Jupyter Notebook" — reference Python instead
+- Unmatched → ask where code lives
 
-**Activity patterns:**
-- `commit_pattern` must be neutral — no mention of AI, suspicious, or fraud
+**Activity patterns:** `commit_pattern` must be neutral — no AI/suspicious/fraud language.
 
 ---
 
-## Frontend Routes (`App.jsx`)
+## Frontend Routes
 
 ```
-/        → LandingPage.jsx   (marketing page)
-/verify  → VerifyPage        (form → polling → report)
+/        → LandingPage.jsx
+/verify  → VerifyPage (form → polling → report)
 *        → redirect to /
 ```
 
@@ -229,21 +241,17 @@ React Router v6. `VerifyPage` defined inline in `App.jsx`.
 
 ## Report UI (`ReportView.jsx`)
 
-Sections top to bottom:
+1. Candidate header — username + stats
+2. Overview — factual LLM summary
+3. Timeline flags — amber border, ⚠ + question. Green ✓ if none.
+4. Skill evidence — green pills (supported), grey pills (no evidence)
+5. Activity patterns — 2×2 stat cards
+6. Project claims — ✓ linked repo or ✗/⚠/🔒 with note
+7. Interview questions — numbered list (timeline + project combined); grey context label per item
+8. Repo reference — clickable links, commits, languages, flag badges
+9. Debug panel — collapsible errors
 
-1. **Candidate header** — username, GitHub since year, repo/commit/language counts
-2. **Overview** — 2-3 sentence factual summary from Agent 5
-3. **Timeline flags** — amber left border, ⚠ observation + evidence + interview question. Green ✓ if none.
-4. **Skill evidence** — green pills (supported) and grey pills (no public evidence)
-5. **Activity patterns** — 2×2 grid stat cards
-6. **Project claims** — ✓ matched repo link, or ✗/⚠/🔒 with classification note
-7. **Interview questions** — numbered list combining timeline flag questions + per-project questions; grey context label above each ("Re: Timeline", "Re: {repo}", "Re: Unmatched project…")
-8. **Repo reference** — table with clickable repo links, commits, languages, flag badges
-9. **Debug panel** — collapsible, pipeline errors only
-
-**Project claim display:**
-
-| Flag | Icon | Color | Note shown |
+| Flag | Icon | Color | Note |
 |---|---|---|---|
 | `CLAIM_NO_EVIDENCE` | ✗ | red | "No matching repo found" |
 | `LIKELY_PRIVATE_CORPORATE` | ⚠ | amber | "Corporate/private repo expected" |
@@ -251,49 +259,50 @@ Sections top to bottom:
 
 ---
 
-## Landing Page (`LandingPage.jsx`)
+## CORS (`main.py`)
 
-Hero (dark navy) → Problem → How it works (3 numbered cards) → What you get (bullet list + live JSX report mockup) → Who it's for (3 audience cards) → CTA (dark navy) → Footer.
+Allowed origins:
+- `http://localhost:5173`
+- `https://verif-ai-nine.vercel.app`
 
-The mockup uses identical JSX/styles to `ReportView` — not a screenshot.
+`allow_credentials=True` is set.
 
 ---
 
 ## Decisions — Do Not Revert
 
+- **Anthropic Claude, not OpenAI** — all LLM calls use `client.messages.create(system=..., messages=[...])`
 - **No trust score, no risk label, no recommendation** — report surfaces evidence; recruiter decides
 - **No numeric AI score** — qualitative signals only
 - **Experience section never checked** — corporate code lives in private repos
-- **Skills evaluated individually** — "Python, Django, REST APIs" → 3 separate checks
-- **Timeline flags only on explicit time claims** — bare "Python" listing → no flag
-- **Timeline flags pre-filtered deterministically** — `_has_time_claim()` runs before LLM call
-- **Forked repo questions ask about contribution, not creation** — enforced via context annotation + prompt rule
+- **Skills evaluated individually** — no grouped claims
+- **Timeline flags only on explicit time claims** — `_has_time_claim()` pre-filters
+- **Forked repo questions ask about contribution, not creation**
 - **Jupyter Notebook never mentioned in questions** — reference Python instead
-- **Commit pattern must be neutral** — no AI/suspicious/fraud language
-- **Dependency files checked first** — more reliable than language API or README
+- **Dependency files checked first** in skill matching
 - **Alias match requires text confirmation** — prevents over-counting
-- **Project classification is keyword-based** — `CLASSIFIED_HINTS` before `CORPORATE_HINTS` before `CLAIM_NO_EVIDENCE`; no company name extraction
+- **Project classification is keyword-only** — no company name extraction
 - **No business logic in `main.py` or `pipeline.py`** — wiring only
-- **Errors accumulated, not fatal** — pipeline always continues
+- **Errors accumulated, not fatal**
 
 ---
 
 ## Open Issues
 
-| Issue | Fix |
+| Issue | Status |
 |---|---|
-| PDF worker on Vercel | `UploadForm.jsx` uses `new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url)` + pdfjs@3.11.174. Not yet tested on live Vercel. |
-| In-memory result store | `_results` dict in `routes.py` resets on Railway restart. Fix: SQLite or file-based store. |
-| Vercel env var not yet set | `VITE_API_URL` must be added in Vercel dashboard to connect hosted frontend to Railway backend. |
+| PDF worker on Vercel | Not yet tested on live Vercel after pdfjs@3.11.174 fix |
+| In-memory result store | `_results` resets on Railway restart — needs SQLite persistence |
+| Vercel env var | `VITE_API_URL` must be set in Vercel dashboard |
+| Railway env var | `ANTHROPIC_API_KEY` must be set (replacing `OPENAI_API_KEY`) |
 
 ---
 
 ## What's Next
 
-1. **Set `VITE_API_URL` in Vercel dashboard** — unblocks end-to-end hosted flow
-2. **Test full pipeline on Vercel** — PDF upload + verification + report display
+1. **Set env vars** — `VITE_API_URL` in Vercel, `ANTHROPIC_API_KEY` in Railway
+2. **Deploy + test end-to-end** — full pipeline on hosted version
 3. **Persistence** — SQLite store so results survive Railway restarts
-4. **Landing page polish** — mobile responsiveness test, copy review
 
 ---
 
@@ -303,22 +312,15 @@ The mockup uses identical JSX/styles to `ReportView` — not a screenshot.
 Full scaffold: 5-agent pipeline, FastAPI, LangGraph, React frontend, Railway + Vercel deployment.
 
 ### Session 2 — 2026-05-31
-All 5 agents implemented. Skill matching debugged (aliases, dep file priority). PDF worker iterations. Live polling fixed (`stream_pipeline`).
+All 5 agents implemented. Skill matching debugged. PDF worker iterations. Live polling fixed.
 
 ### Session 3 — 2026-06-01
-- Report redesigned: trust score/risk label removed. New `RecruiterReport`: overview, timeline_flags, activity_patterns.
-- `ReportView.jsx` rewritten as intelligence report.
-- `core/constants.py` created — all constants centralised.
-- `SKILL_ALIASES` tightened. Project matching threshold → 0.35 + tech stack cross-validation.
-- Dependency fetching added to Agent 2. `_skill_in_repo()` checks deps first.
-- Landing page built (`LandingPage.jsx`) + React Router in `App.jsx`.
+Report redesigned (no score/risk). `core/constants.py` created. Skill aliases tightened. Dep fetching added. Landing page + React Router.
 
 ### Session 4 — 2026-06-02
-- Timeline flag pre-filtering: `_has_time_claim()` runs before LLM; injects TIMELINE ANALYSIS section into context; prompt has HARD RULE not soft suggestion.
-- `ProjectInterviewQuestion` model added; `project_interview_questions` added to `RecruiterReport` and LLM output.
-- `InterviewQuestions` component added to `ReportView` (numbered list, timeline + project questions combined).
-- Fork rule: forked repos annotated with `[FORK]` in context; prompt rule enforces contribution questions not creation questions.
-- Jupyter Notebook rule: never mentioned in interview questions — reference Python instead.
-- Project classification rewritten: `_classify_unmatched()` now keyword-only (no company name extraction); `CORPORATE_HINTS` added to constants; `PRIVATE_HINTS` removed.
-- `PROJECT_FLAG_DISPLAY` notes fixed in frontend.
-- `api.js` BASE URL fixed: reads `import.meta.env.VITE_API_URL || "http://localhost:8000"`.
+- Timeline pre-filtering (`_has_time_claim()`), project interview questions, fork annotation, Jupyter rule.
+- Project classification simplified to keyword-only (`CORPORATE_HINTS`).
+- `InterviewQuestions` component in ReportView.
+- `api.js` BASE URL reads `VITE_API_URL` env var.
+- CORS updated: Vercel origin added, `allow_credentials=True`.
+- **LLM provider switched from OpenAI to Anthropic** (`claude-sonnet-4-20250514`). All 4 agents updated. `requirements.txt`: `openai` → `anthropic`. `extract_json()` helper added to strip markdown fences.
