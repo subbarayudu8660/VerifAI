@@ -20,9 +20,29 @@ from core.constants import (
     SKIP_SKILLS,
     STOPWORDS,
 )
-from core.llm import MODEL, extract_json, get_client
+from core.llm import MODEL, get_client
 from core.models import CoherenceCheck, CoherenceReport
 from state import PipelineState
+
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response, handling markdown fences and malformed output."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +402,7 @@ def verify_coherence(state: PipelineState) -> PipelineState:
             system=_SYSTEM,
             messages=[{"role": "user", "content": _build_llm_context(state)}],
         )
-        data = json.loads(extract_json(resp.content[0].text))
+        data = _extract_json(resp.content[0].text)
         result = CoherenceReport(
             checks=[CoherenceCheck(**c) for c in data.get("checks", [])],
             summary=data.get("summary", ""),

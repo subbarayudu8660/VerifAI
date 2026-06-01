@@ -78,7 +78,7 @@ verifAI/                            ← project root (CLAUDE.md here, gitignored
     │   ├── models.py               ← All Pydantic models
     │   ├── flags.py                ← Flag enum + make_flag()
     │   ├── github_client.py        ← GitHub API wrapper + get_file_contents()
-    │   └── llm.py                  ← Anthropic client + MODEL + extract_json()
+    │   └── llm.py                  ← Anthropic client, MODEL = "claude-sonnet-4-5"
     ├── api/
     │   └── routes.py               ← POST /verify, GET /results/{run_id}
     ├── outputs/                    ← Per-run JSON (gitignored)
@@ -102,19 +102,19 @@ verifAI/                            ← project root (CLAUDE.md here, gitignored
 ## LLM Stack (`core/llm.py`)
 
 - **Provider:** Anthropic
-- **Model:** `claude-sonnet-4-20250514`
+- **Model:** `claude-sonnet-4-5`
 - **Client:** `anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))`
 - **Call pattern used in all agents:**
 ```python
 resp = client.messages.create(
     model=MODEL,
-    max_tokens=...,       # 1024 (ai_detector), 2000 (resume_parser), 4096 (coherence, report)
-    system=_SYSTEM,       # system prompt goes here, NOT as a message
+    max_tokens=...,   # 1024 (ai_detector), 2000 (resume_parser), 4096 (coherence, report)
+    system=_SYSTEM,   # system prompt goes here, NOT as a message
     messages=[{"role": "user", "content": ...}],
 )
-data = json.loads(extract_json(resp.content[0].text))
+data = _extract_json(resp.content[0].text)
 ```
-- **`extract_json(text)`** — strips ` ```json ``` ` fences Claude sometimes wraps responses in
+- **`_extract_json(text)`** — defined locally in each agent file (resume_parser, coherence_verifier, report_generator). Handles: direct JSON parse → strip ` ```json ``` ` fences and retry → `re.search(r'\{.*\}')` fallback → returns `{}` on total failure. Never raises `JSONDecodeError`.
 
 **Do NOT use:** `client.chat.completions.create(...)`, `response_format={"type": "json_object"}`, `resp.choices[0].message.content` — these are OpenAI patterns and will break.
 
@@ -323,4 +323,6 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 - `InterviewQuestions` component in ReportView.
 - `api.js` BASE URL reads `VITE_API_URL` env var.
 - CORS updated: Vercel origin added, `allow_credentials=True`.
-- **LLM provider switched from OpenAI to Anthropic** (`claude-sonnet-4-20250514`). All 4 agents updated. `requirements.txt`: `openai` → `anthropic`. `extract_json()` helper added to strip markdown fences.
+- **LLM provider switched from OpenAI to Anthropic.** All 4 agents updated to `client.messages.create(system=..., messages=[...])`. `requirements.txt`: `openai` → `anthropic`.
+- MODEL updated to `claude-sonnet-4-5`.
+- `_extract_json()` added locally to resume_parser, coherence_verifier, report_generator — handles markdown fences, embedded JSON fallback, returns `{}` on failure instead of raising.

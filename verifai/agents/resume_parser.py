@@ -6,10 +6,32 @@ whether to check it against GitHub (projects/skills only — never experience).
 """
 
 import json
+import re
 
-from core.llm import MODEL, extract_json, get_client
+from core.llm import MODEL, get_client
 from core.models import ResumeClaim, ResumeClaimsResult
 from state import PipelineState
+
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response, handling markdown fences and malformed output."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return {}
+
 
 _SYSTEM = """\
 You are a resume parser. Extract every verifiable claim from the resume text provided.
@@ -86,7 +108,7 @@ def parse_resume(state: PipelineState) -> PipelineState:
             system=_SYSTEM,
             messages=[{"role": "user", "content": state["resume_raw"]}],
         )
-        data = json.loads(extract_json(resp.content[0].text))
+        data = _extract_json(resp.content[0].text)
 
         claims = []
         for raw in data.get("claims", []):

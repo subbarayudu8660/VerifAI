@@ -13,7 +13,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from core.llm import MODEL, extract_json, get_client
+from core.llm import MODEL, get_client
 from core.models import (
     ActivityPatterns,
     CandidateReport,
@@ -23,6 +23,27 @@ from core.models import (
     TimelineFlag,
 )
 from state import PipelineState
+
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response, handling markdown fences and malformed output."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return {}
+
 
 _SYSTEM = """\
 You are generating a candidate intelligence report for a technical recruiter.
@@ -72,10 +93,15 @@ Return JSON with exactly this structure:
 }
 
 project_interview_questions rules:
-- One entry per project claim (matched or unmatched)
-- Matched projects: reference the actual repo name, commit count, languages — make it specific
-- Unmatched projects: ask where the code lives and to walk through the work
-- Never skip a project — every project claim gets a question
+Generate a MAXIMUM of 5 interview questions total. Priority order:
+1. One question per timeline flag (if any)
+2. One question per matched project from the resume (most commits first)
+3. One question for the most interesting/high-commit repo on GitHub (if slots remain)
+4. Fill remaining slots with the most relevant unmatched project claims
+
+Never exceed 5 questions total. Quality over quantity.
+Matched projects: reference the actual repo name, commit count, languages — make it specific.
+Unmatched projects: ask where the code lives and to walk through the work.
 
 FORKED REPOS — if a matched repo is marked [FORK] in the context:
 - NEVER ask "how did you build this" or "walk me through creating this"
@@ -98,7 +124,23 @@ Rules:
 - When evidence is absent, note it may be explained by private or corporate repos
 
 HARD RULE — timeline_flags:
-The user context will contain a section "TIMELINE ANALYSIS" that either lists
+Only generate a timeline flag if the resume EXPLICITLY states a number of years
+or a specific start date for a skill.
+
+VALID — these may produce a flag:
+  "5 years of Python experience"
+  "Python since 2019"
+  "3+ years JavaScript"
+
+INVALID — these must NEVER produce a flag:
+  "Languages: Python, Java, JavaScript"  ← no timeframe stated
+  "Proficient in React"                  ← no timeframe stated
+  "Skills: Python, TypeScript"           ← no timeframe stated
+
+If the resume just lists a skill without a timeframe → return empty timeline_flags [].
+Never infer or assume years of experience from a skill listing.
+
+The user context will contain a "TIMELINE ANALYSIS" section that either lists
 skills with explicit time claims OR states that none exist.
 If the context says "No skills with explicit time claims" → you MUST return
 timeline_flags as an empty array []. No exceptions. Do not invent flags.
@@ -232,7 +274,7 @@ def generate_report(state: PipelineState) -> PipelineState:
             system=_SYSTEM,
             messages=[{"role": "user", "content": _build_context(state)}],
         )
-        data = json.loads(extract_json(resp.content[0].text))
+        data = _extract_json(resp.content[0].text)
 
         ap = data.get("activity_patterns", {})
         c_data = data.get("candidate", {})

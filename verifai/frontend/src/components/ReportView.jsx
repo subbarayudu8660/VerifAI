@@ -285,8 +285,8 @@ const PROJECT_FLAG_DISPLAY = {
   LIKELY_PRIVATE_CLASSIFIED: { icon: "🔒", color: "#6b7280", note: "Classified/private work expected" },
 };
 
-function ProjectMatches({ matches, hasResume }) {
-  if (!hasResume || !matches?.length) return null;
+function ProjectMatches({ matches }) {
+  if (!matches?.length) return null;
 
   return (
     <div style={card}>
@@ -492,13 +492,13 @@ export default function ReportView({ state, onReset }) {
   const hasResume = Boolean(state.resume_raw || state.resume_claims);
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto" }}>
+    <div style={{ maxWidth: 820, margin: "0 auto", scrollBehavior: "smooth", overflowAnchor: "none" }}>
       <CandidateHeader state={state} onReset={onReset} />
       <Overview recruiter={recruiter} />
       <TimelineFlags recruiter={recruiter} hasResume={hasResume} />
       <SkillEvidence skills={skill_verification} hasResume={hasResume} />
+      <ProjectMatches matches={project_matches} />
       <ActivityPatterns recruiter={recruiter} />
-      <ProjectMatches matches={project_matches} hasResume={hasResume} />
       <InterviewQuestions recruiter={recruiter} hasResume={hasResume} />
       <RepoTable repos={github_data?.repos} username={state.github_username} />
       <DebugInfo errors={errors} />
