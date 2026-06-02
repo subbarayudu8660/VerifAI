@@ -104,11 +104,17 @@ def parse_resume(state: PipelineState) -> PipelineState:
     try:
         resp = client.messages.create(
             model=MODEL,
-            max_tokens=2000,
+            max_tokens=4096,
             system=_SYSTEM,
             messages=[{"role": "user", "content": state["resume_raw"]}],
         )
         data = _extract_json(resp.content[0].text)
+        if not data:
+            state["errors"].append(
+                f"resume_parser: LLM response could not be parsed as JSON "
+                f"(stop_reason={resp.stop_reason}, output_tokens={resp.usage.output_tokens})"
+            )
+            return state
 
         claims = []
         for raw in data.get("claims", []):

@@ -317,6 +317,28 @@ All 5 agents implemented. Skill matching debugged. PDF worker iterations. Live p
 ### Session 3 — 2026-06-01
 Report redesigned (no score/risk). `core/constants.py` created. Skill aliases tightened. Dep fetching added. Landing page + React Router.
 
+### Session 5 — 2026-06-02
+
+**Root cause of claims=0 / project_matches=[] found and fixed**
+- `resume_parser.py` had `max_tokens=2000`. With the full system prompt (~1062 input tokens), Claude's JSON output for a real resume (30+ claims × 7 fields each) hits 2000 tokens and is truncated mid-string. `_extract_json` silently returns `{}`, `data.get("claims", [])` returns `[]`, and no error is ever logged.
+- Confirmed via `stop_reason=max_tokens` and `output_tokens=2000` (the exact limit).
+- **Fix 1:** Raised `max_tokens` from 2000 → 4096 in `resume_parser.py`.
+- **Fix 2:** Added explicit error log when `_extract_json` returns `{}` — logs `stop_reason` and `output_tokens` so truncation is always visible in `state.errors`.
+- All other agents already use 4096 tokens. 2000 was the only outlier.
+
+**ReportView.jsx debug logging + null guard hardened**
+- Added `console.log('ReportView state keys:', ...)` and `console.log('project_matches:', project_matches)` at top of `ReportView` default export so the browser console shows exactly what the frontend receives.
+- Changed `ProjectMatches` null guard from `if (!matches?.length)` to explicit `if (!matches || matches.length === 0)` — same behavior, clearer intent.
+- Confirmed no field name mismatch: API returns `snake_case` (`project_matches`) matching the Python TypedDict key; frontend destructures the same name. No camelCase issue.
+
+**Root cause found: `project_matches` null in frontend**
+- Bug was in `StatusPoll.jsx` — the `done` condition had an early-exit path:
+  `state.errors?.length > 0 && state.current_agent !== "queued"`
+- Pipeline errors are non-fatal and accumulate throughout the run (e.g., 404s from README fetches logged during `github_scraper`). A single accumulated error caused `onComplete(state)` to fire while still mid-pipeline, passing an intermediate snapshot where `verify_coherence` hadn't run yet → `project_matches: null`.
+- **Fix:** Removed the error-triggered early exit. `onComplete` now only fires when `state.final_report !== null`.
+- Confirmed `routes.py` is correct — it correctly streams live state updates per agent; `coherence_verifier.py` is correct — `project_matches` is populated and non-null in the final state.
+- Added/removed `verifai/debug_run.py` (temp debug script — can be deleted).
+
 ### Session 4 — 2026-06-02
 - Timeline pre-filtering (`_has_time_claim()`), project interview questions, fork annotation, Jupyter rule.
 - Project classification simplified to keyword-only (`CORPORATE_HINTS`).

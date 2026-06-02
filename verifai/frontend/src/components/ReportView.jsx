@@ -286,7 +286,7 @@ const PROJECT_FLAG_DISPLAY = {
 };
 
 function ProjectMatches({ matches }) {
-  if (!matches?.length) return null;
+  if (!matches || matches.length === 0) return null;
 
   return (
     <div style={card}>
@@ -488,6 +488,8 @@ function DebugInfo({ errors }) {
 
 export default function ReportView({ state, onReset }) {
   const { github_data, skill_verification, project_matches, final_report, errors } = state;
+  console.log('ReportView state keys:', Object.keys(state));
+  console.log('project_matches:', project_matches);
   const recruiter = final_report?.recruiter;
   const hasResume = Boolean(state.resume_raw || state.resume_claims);
 
