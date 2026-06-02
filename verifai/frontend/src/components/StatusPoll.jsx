@@ -44,7 +44,7 @@ export default function StatusPoll({ runId, onComplete }) {
       try {
         const state = await getResults(runId);
         setAgent(state.current_agent || "queued");
-        const done = state.final_report !== null;
+        const done = state.final_report !== null || state.current_agent === "complete";
         if (done) {
           clearInterval(intervalRef.current);
           onComplete(state);

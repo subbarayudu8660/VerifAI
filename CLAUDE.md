@@ -333,7 +333,7 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 **Root cause of claims=0 / project_matches=[] found and fixed**
 - `resume_parser.py` had `max_tokens=2000`. With the full system prompt (~1062 input tokens), Claude's JSON output for a real resume (30+ claims × 7 fields each) hits 2000 tokens and is truncated mid-string. `_extract_json` silently returns `{}`, `data.get("claims", [])` returns `[]`, and no error is ever logged.
 - Confirmed via `stop_reason=max_tokens` and `output_tokens=2000` (the exact limit).
-- **Fix 1:** Raised `max_tokens` from 2000 → 4096 in `resume_parser.py`.
+- **Fix 1:** Raised `max_tokens` from 2000 → 4096 in `resume_parser.py` (later raised again to 8096 in Session 6).
 - **Fix 2:** Added explicit error log when `_extract_json` returns `{}` — logs `stop_reason` and `output_tokens` so truncation is always visible in `state.errors`.
 - All other agents already use 4096 tokens. 2000 was the only outlier.
 
@@ -349,6 +349,18 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 - **Fix:** Removed the error-triggered early exit. `onComplete` now only fires when `state.final_report !== null`.
 - Confirmed `routes.py` is correct — it correctly streams live state updates per agent; `coherence_verifier.py` is correct — `project_matches` is populated and non-null in the final state.
 - Added/removed `verifai/debug_run.py` (temp debug script — can be deleted).
+
+### Session 6 — 2026-06-03
+
+**resume_parser: max_tokens raised 4096 → 8096**
+- Larger resumes (40+ claims) were still hitting the 4096 limit. Raised to 8096 to give full headroom.
+
+**StatusPoll: completion condition hardened**
+- Previous condition: `state.final_report !== null`
+- New condition: `state.final_report !== null || state.current_agent === "complete"`
+- Rationale: if `final_report` is somehow null but `current_agent` is "complete", the pipeline is done and the frontend must still transition — otherwise it polls forever.
+
+---
 
 ### Session 4 — 2026-06-02
 - Timeline pre-filtering (`_has_time_claim()`), project interview questions, fork annotation, Jupyter rule.

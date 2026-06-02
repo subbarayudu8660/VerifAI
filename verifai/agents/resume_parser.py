@@ -104,7 +104,7 @@ def parse_resume(state: PipelineState) -> PipelineState:
     try:
         resp = client.messages.create(
             model=MODEL,
-            max_tokens=4096,
+            max_tokens=8096,
             system=_SYSTEM,
             messages=[{"role": "user", "content": state["resume_raw"]}],
         )
