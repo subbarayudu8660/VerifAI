@@ -10,7 +10,6 @@ Synthesises all prior agent outputs into:
 """
 
 import json
-import re
 from datetime import datetime, timezone
 
 from core.llm import MODEL, get_client
@@ -20,7 +19,6 @@ from core.models import (
     FinalReport,
     ProjectInterviewQuestion,
     RecruiterReport,
-    TimelineFlag,
 )
 from state import PipelineState
 
@@ -61,14 +59,6 @@ Return JSON with exactly this structure:
 {
   "overview": "2-3 sentence factual summary of what this GitHub profile shows. Focus on what IS there, not what is missing. No verdict.",
 
-  "timeline_flags": [
-    {
-      "observation": "Claims Python since 2021 -> First Python commit: March 2024",
-      "evidence": "specific dates or data that triggered this",
-      "interview_question": "Your first Python commit on GitHub was March 2024, but your resume claims experience since 2021 — can you walk us through your Python work before that? Were these in private repos?"
-    }
-  ],
-
   "activity_patterns": {
     "account_age": "GitHub account created: 2024",
     "most_active_languages": ["Python", "Jupyter Notebook"],
@@ -94,10 +84,9 @@ Return JSON with exactly this structure:
 
 project_interview_questions rules:
 Generate a MAXIMUM of 5 interview questions total. Priority order:
-1. One question per timeline flag (if any)
-2. One question per matched project from the resume (most commits first)
-3. One question for the most interesting/high-commit repo on GitHub (if slots remain)
-4. Fill remaining slots with the most relevant unmatched project claims
+1. One question per matched project from the resume (most commits first)
+2. One question for the most interesting/high-commit repo on GitHub (if slots remain)
+3. Fill remaining slots with the most relevant unmatched project claims
 
 Never exceed 5 questions total. Quality over quantity.
 Matched projects: reference the actual repo name, commit count, languages — make it specific.
@@ -118,56 +107,10 @@ scale or metrics mentioned in the README, or the actual languages and frameworks
 
 Rules:
 - Never use the words: fraudulent, suspicious, lying, fake, risk, score
-- Every timeline flag must have a specific interview question
-- Only emit timeline flags when there is real evidence — do not fabricate
 - Overview must be neutral and factual
 - When evidence is absent, note it may be explained by private or corporate repos
-
-HARD RULE — timeline_flags:
-Only generate a timeline flag if the resume EXPLICITLY states a number of years
-or a specific start date for a skill.
-
-VALID — these may produce a flag:
-  "5 years of Python experience"
-  "Python since 2019"
-  "3+ years JavaScript"
-
-INVALID — these must NEVER produce a flag:
-  "Languages: Python, Java, JavaScript"  ← no timeframe stated
-  "Proficient in React"                  ← no timeframe stated
-  "Skills: Python, TypeScript"           ← no timeframe stated
-
-If the resume just lists a skill without a timeframe → return empty timeline_flags [].
-Never infer or assume years of experience from a skill listing.
-
-The user context will contain a "TIMELINE ANALYSIS" section that either lists
-skills with explicit time claims OR states that none exist.
-If the context says "No skills with explicit time claims" → you MUST return
-timeline_flags as an empty array []. No exceptions. Do not invent flags.
-Only generate a timeline flag for a skill that appears in the TIMELINE ANALYSIS
-section AND whose GitHub first-seen date contradicts the claimed timeframe.
 """
 
-
-def _has_time_claim(skill: str, resume_claims: dict) -> bool:
-    """Return True if any resume claim's raw_text explicitly states a timeframe for this skill.
-
-    Matches patterns like: "5 years of Python", "Python since 2019",
-    "since 2020 ... React", "3+ years experience in Node.js".
-    A bare skill listing ("Python", "React") returns False.
-    """
-    skill_lower = skill.lower()
-    patterns = [
-        r'\d+\+?\s*years?\s*(?:of\s*)?' + re.escape(skill_lower),
-        re.escape(skill_lower) + r'\s*since\s*\d{4}',
-        r'since\s*\d{4}[^.]*' + re.escape(skill_lower),
-        r'\d+\+?\s*years?[^.]*' + re.escape(skill_lower),
-    ]
-    for claim in resume_claims.get("claims", []):
-        raw = claim.get("raw_text", "").lower()
-        if any(re.search(p, raw, re.IGNORECASE) for p in patterns):
-            return True
-    return False
 
 
 def _build_context(state: PipelineState) -> str:
@@ -200,32 +143,11 @@ def _build_context(state: PipelineState) -> str:
         )
 
     skills = state.get("skill_verification") or []
-    claims = state.get("resume_claims") or {}
     if skills:
         supported = [s["skill"] for s in skills if s["evidence_found"]]
         no_evidence = [s["skill"] for s in skills if not s["evidence_found"]]
         parts.append(f"\nSkill verification — supported: {supported}")
         parts.append(f"Skill verification — no public evidence: {no_evidence}")
-
-        # Pre-filter: only pass skills that have explicit time claims in the resume
-        skills_with_time_claims = [
-            s["skill"] for s in skills if _has_time_claim(s["skill"], claims)
-        ]
-        parts.append("\nTIMELINE ANALYSIS:")
-        if skills_with_time_claims:
-            parts.append(
-                f"Skills with explicit time claims in resume (ONLY these may generate timeline flags): "
-                f"{skills_with_time_claims}"
-            )
-            parts.append(
-                "Compare each against languages_first_seen above. "
-                "Only flag if GitHub first-seen date contradicts the claimed timeframe."
-            )
-        else:
-            parts.append(
-                "No skills with explicit time claims found in resume. "
-                "timeline_flags MUST be an empty array []."
-            )
 
     projects = state.get("project_matches") or []
     if projects:
@@ -282,9 +204,6 @@ def generate_report(state: PipelineState) -> PipelineState:
         result = FinalReport(
             recruiter=RecruiterReport(
                 overview=data.get("overview", ""),
-                timeline_flags=[
-                    TimelineFlag(**f) for f in data.get("timeline_flags", [])
-                ],
                 activity_patterns=ActivityPatterns(
                     account_age=ap.get("account_age", ""),
                     most_active_languages=ap.get("most_active_languages", []),

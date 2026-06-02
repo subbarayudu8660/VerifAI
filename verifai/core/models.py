@@ -101,12 +101,6 @@ class CoherenceReport(BaseModel):
 # Report generator (Agent 5)
 # ---------------------------------------------------------------------------
 
-class TimelineFlag(BaseModel):
-    observation: str        # e.g. "Claims Python since 2021 → First commit: March 2024"
-    evidence: str           # specific dates or data that triggered this
-    interview_question: str # must reference specific dates and evidence from above
-
-
 class ActivityPatterns(BaseModel):
     account_age: str            # e.g. "GitHub account created: 2024"
     most_active_languages: list[str]
@@ -122,7 +116,6 @@ class ProjectInterviewQuestion(BaseModel):
 
 class RecruiterReport(BaseModel):
     overview: str
-    timeline_flags: list[TimelineFlag]
     activity_patterns: ActivityPatterns
     project_interview_questions: list[ProjectInterviewQuestion] = []
 

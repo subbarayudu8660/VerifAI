@@ -160,11 +160,8 @@ State flows through `PipelineState` (TypedDict). Each agent sets `state["current
 - LLM call: `max_tokens=4096`
 
 ### Agent 5 — Report Generator (`agents/report_generator.py`)
-- **Pre-filters timeline flags deterministically** before Claude call:
-  - `_has_time_claim(skill, resume_claims)` — regex for "X years of Python", "Python since 2019"
-  - Injects `TIMELINE ANALYSIS` section into context; if no time claims → context says "must be []"
 - **Annotates forks** in context: `[FORK]` per repo, `[FORK — ask about contribution, not creation]` per matched project
-- Produces `RecruiterReport` (overview, timeline_flags, activity_patterns, project_interview_questions) and `CandidateReport`
+- Produces `RecruiterReport` (overview, activity_patterns, project_interview_questions) and `CandidateReport`
 - LLM call: `max_tokens=4096`
 
 ### LangGraph wiring (`pipeline.py`)
@@ -185,10 +182,9 @@ AIDetectionResult         ← Agent 3 full output
 CoherenceCheck            ← Agent 4 per claim
 CoherenceReport           ← Agent 4 full output (checks + interview questions)
 
-TimelineFlag              ← { observation, evidence, interview_question }
 ActivityPatterns          ← { account_age, most_active_languages, repo_velocity, commit_pattern }
 ProjectInterviewQuestion  ← { project, matched_repo, interview_question }
-RecruiterReport           ← { overview, timeline_flags, activity_patterns, project_interview_questions }
+RecruiterReport           ← { overview, activity_patterns, project_interview_questions }
 CandidateReport           ← { candidate, strengths, areas_to_address, summary }
 FinalReport               ← { recruiter, candidate, generated_at }
 ```
@@ -212,10 +208,6 @@ FinalReport               ← { recruiter, candidate, generated_at }
 ---
 
 ## Report Generator Prompt Rules
-
-**Timeline flags:**
-- `_has_time_claim()` pre-filters deterministically — LLM never sees ambiguous cases
-- Context injects explicit TIMELINE ANALYSIS section; hard rule: if empty → return `[]`
 
 **Project interview questions:**
 - One per project (matched or unmatched)
@@ -243,13 +235,12 @@ React Router v6. `VerifyPage` defined inline in `App.jsx`.
 
 1. Candidate header — username + stats
 2. Overview — factual LLM summary
-3. Timeline flags — amber border, ⚠ + question. Green ✓ if none.
-4. Skill evidence — green pills (supported), grey pills (no evidence)
+3. Skill evidence — green pills (supported), grey pills (no evidence)
+4. Project claims — ✓ linked repo or ✗/⚠/🔒 with note
 5. Activity patterns — 2×2 stat cards
-6. Project claims — ✓ linked repo or ✗/⚠/🔒 with note
-7. Interview questions — numbered list (timeline + project combined); grey context label per item
-8. Repo reference — clickable links, commits, languages, flag badges
-9. Debug panel — collapsible errors
+6. Interview questions — numbered list (project questions only); grey context label per item
+7. Repo reference — clickable links, commits, languages, flag badges
+8. Debug panel — collapsible errors
 
 | Flag | Icon | Color | Note |
 |---|---|---|---|
@@ -276,7 +267,6 @@ Allowed origins:
 - **No numeric AI score** — qualitative signals only
 - **Experience section never checked** — corporate code lives in private repos
 - **Skills evaluated individually** — no grouped claims
-- **Timeline flags only on explicit time claims** — `_has_time_claim()` pre-filters
 - **Forked repo questions ask about contribution, not creation**
 - **Jupyter Notebook never mentioned in questions** — reference Python instead
 - **Dependency files checked first** in skill matching
@@ -318,6 +308,12 @@ All 5 agents implemented. Skill matching debugged. PDF worker iterations. Live p
 Report redesigned (no score/risk). `core/constants.py` created. Skill aliases tightened. Dep fetching added. Landing page + React Router.
 
 ### Session 5 — 2026-06-02
+
+**Timeline flags removed entirely**
+- Deleted `TimelineFlag` model from `core/models.py`; removed `timeline_flags` field from `RecruiterReport`.
+- Removed `_has_time_claim()` function, `TIMELINE ANALYSIS` context block, and `timeline_flags` JSON schema + rules from `agents/report_generator.py`. Removed unused `re` import.
+- Removed `TimelineFlags` component and its call site from `ReportView.jsx`; removed timeline items block from `InterviewQuestions`.
+- Report section order is now: Overview → Skill Evidence → Project Claims → Activity Patterns → Interview Questions → Repo Reference.
 
 **Root cause of claims=0 / project_matches=[] found and fixed**
 - `resume_parser.py` had `max_tokens=2000`. With the full system prompt (~1062 input tokens), Claude's JSON output for a real resume (30+ claims × 7 fields each) hits 2000 tokens and is truncated mid-string. `_extract_json` silently returns `{}`, `data.get("claims", [])` returns `[]`, and no error is ever logged.

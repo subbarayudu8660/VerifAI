@@ -124,61 +124,6 @@ function Overview({ recruiter }) {
 }
 
 // ---------------------------------------------------------------------------
-// Timeline Flags
-// ---------------------------------------------------------------------------
-
-function TimelineFlags({ recruiter, hasResume }) {
-  if (!hasResume) {
-    return (
-      <div style={card}>
-        <div style={sectionTitle}>Timeline Flags</div>
-        <p style={{ fontSize: 14, color: "#9ca3af", margin: 0 }}>Upload a resume to see timeline analysis.</p>
-      </div>
-    );
-  }
-
-  const flags = recruiter?.timeline_flags || [];
-
-  if (flags.length === 0) {
-    return (
-      <div style={card}>
-        <div style={sectionTitle}>Timeline Flags</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#16a34a" }}>
-          <span style={{ fontSize: 16 }}>✓</span>
-          No timeline inconsistencies found
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={card}>
-      <div style={sectionTitle}>Timeline Flags</div>
-      {flags.map((f, i) => (
-        <div
-          key={i}
-          style={{
-            borderLeft: "3px solid #f59e0b",
-            paddingLeft: 14,
-            marginBottom: i < flags.length - 1 ? 18 : 0,
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", marginBottom: 4 }}>
-            ⚠ {f.observation}
-          </div>
-          <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 6 }}>
-            {f.evidence}
-          </div>
-          <div style={{ fontSize: 13, color: "#92400e", fontStyle: "italic", background: "#fffbeb", borderRadius: 5, padding: "5px 10px", display: "inline-block" }}>
-            Ask: "{f.interview_question}"
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Skill Evidence
 // ---------------------------------------------------------------------------
 
@@ -399,12 +344,6 @@ function InterviewQuestions({ recruiter, hasResume }) {
 
   const items = [];
 
-  (recruiter.timeline_flags || []).forEach((f) => {
-    if (f.interview_question) {
-      items.push({ context: "Re: Timeline", question: f.interview_question });
-    }
-  });
-
   (recruiter.project_interview_questions || []).forEach((q) => {
     const context = q.matched_repo
       ? `Re: ${q.matched_repo}`
@@ -497,7 +436,6 @@ export default function ReportView({ state, onReset }) {
     <div style={{ maxWidth: 820, margin: "0 auto", scrollBehavior: "smooth", overflowAnchor: "none" }}>
       <CandidateHeader state={state} onReset={onReset} />
       <Overview recruiter={recruiter} />
-      <TimelineFlags recruiter={recruiter} hasResume={hasResume} />
       <SkillEvidence skills={skill_verification} hasResume={hasResume} />
       <ProjectMatches matches={project_matches} />
       <ActivityPatterns recruiter={recruiter} />
