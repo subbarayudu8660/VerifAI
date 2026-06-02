@@ -7,6 +7,8 @@ If github_data is None after Agent 2, Agents 3 and 4 are skipped via a
 conditional edge and the graph jumps straight to generate_report.
 """
 
+import logging
+
 from langgraph.graph import END, StateGraph
 
 from agents.ai_code_detector import detect_ai_code
@@ -16,13 +18,19 @@ from agents.report_generator import generate_report
 from agents.resume_parser import parse_resume
 from state import PipelineState
 
+logger = logging.getLogger(__name__)
+
 
 def _wrap(agent_fn, agent_name: str):
     """Wraps an agent function so errors are caught and logged to state."""
     def node(state: PipelineState) -> PipelineState:
+        logger.info(">>> Starting %s", agent_name)
         try:
-            return agent_fn(state)
+            result = agent_fn(state)
+            logger.info(">>> Finished %s", agent_name)
+            return result
         except Exception as exc:
+            logger.error(">>> %s raised unhandled exception: %s", agent_name, exc)
             state["errors"].append(f"{agent_name}: unhandled exception: {exc}")
             state["current_agent"] = agent_name
             return state

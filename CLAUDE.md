@@ -141,9 +141,10 @@ State flows through `PipelineState` (TypedDict). Each agent sets `state["current
 - No LLM calls — GitHub API only
 
 ### Agent 3 — AI Code Detector (`agents/ai_code_detector.py`)
-- Samples up to 5 recent commit diffs per repo (max 3000 chars each)
-- Scores each repo for AI-generation likelihood via Claude (`max_tokens=1024`)
-- Qualitative signals only — no numeric score shown to users
+- **No GitHub API calls** — uses only data already in `github_data` from state
+- Single LLM call (`max_tokens=1024`) across all repos; context is README text + commit counts, frequency, languages, days since creation, contributor count
+- `ai_likelihood` always `0.0` — qualitative `reasoning` + `indicators` strings only, no numeric score
+- Skips repos with 0 commits; errors are non-fatal (appended to `state.errors`)
 
 ### Agent 4 — Coherence Verifier (`agents/coherence_verifier.py`)
 - **Skill matching** — `_skill_in_repo()` checks in priority order:
@@ -196,8 +197,6 @@ FinalReport               ← { recruiter, candidate, generated_at }
 | Constant | Value | Used by |
 |---|---|---|
 | `RECENT_CREATION_DAYS` | 20 | github_scraper |
-| `SAMPLE_COMMITS` | 5 | ai_code_detector |
-| `MAX_PATCH_CHARS` | 3000 | ai_code_detector |
 | `PROJECT_MATCH_THRESHOLD` | 0.35 | coherence_verifier |
 | `SKIP_SKILLS` | ~20 tools (git, Jira, Slack…) | coherence_verifier |
 | `SKILL_ALIASES` | ~50 skills → language aliases | coherence_verifier |
@@ -308,6 +307,22 @@ All 5 agents implemented. Skill matching debugged. PDF worker iterations. Live p
 Report redesigned (no score/risk). `core/constants.py` created. Skill aliases tightened. Dep fetching added. Landing page + React Router.
 
 ### Session 5 — 2026-06-02
+
+**report_generator: critical `import re` bug fixed + state hardening**
+- `import re` was accidentally removed in Session 5 when `_has_time_claim()` was deleted. `_extract_json` still uses `re.sub` and `re.search` — without the import, any LLM response starting with ` ```json ` caused a `NameError` caught silently by the bare `except`, leaving `final_report` as `None` forever.
+- Added `import re` back.
+- Added explicit error log when `_extract_json` returns `{}` — logs `stop_reason` and `output_tokens` (same pattern as `resume_parser`).
+- Added `state["current_agent"] = "complete"` immediately after `state["final_report"] = ...` so the progress UI reaches its terminal state.
+
+**Pipeline node logging added**
+- `pipeline.py`: added `import logging` + `logger = logging.getLogger(__name__)`. `_wrap()` now logs `>>> Starting <agent>` before and `>>> Finished <agent>` after every node, and `>>> <agent> raised unhandled exception: ...` on failure. No separate wrapper functions needed — logging is inside the existing `_wrap` utility.
+- `main.py`: added `logging.basicConfig(level=INFO, ...)` so the `pipeline` logger has a handler and `>>>` lines actually appear in the uvicorn terminal. Without this the logger would silently discard all messages.
+
+**AI code detector rewritten — no GitHub API calls**
+- Removed `_sample_patches()`, `GitHubClient` import, `sys` import, `SAMPLE_COMMITS`/`MAX_PATCH_CHARS` imports and constants.
+- Agent now makes one LLM call with all repos' metadata (README, commits, frequency, languages, age) already in `github_data`. No new API calls.
+- `ai_likelihood` hardcoded to `0.0` — output is qualitative `reasoning` + `indicators` text only.
+- `SAMPLE_COMMITS` and `MAX_PATCH_CHARS` removed from `core/constants.py` (no longer referenced anywhere).
 
 **Timeline flags removed entirely**
 - Deleted `TimelineFlag` model from `core/models.py`; removed `timeline_flags` field from `RecruiterReport`.

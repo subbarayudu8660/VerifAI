@@ -10,6 +10,7 @@ Synthesises all prior agent outputs into:
 """
 
 import json
+import re
 from datetime import datetime, timezone
 
 from core.llm import MODEL, get_client
@@ -197,6 +198,12 @@ def generate_report(state: PipelineState) -> PipelineState:
             messages=[{"role": "user", "content": _build_context(state)}],
         )
         data = _extract_json(resp.content[0].text)
+        if not data:
+            state["errors"].append(
+                f"report_generator: LLM response could not be parsed as JSON "
+                f"(stop_reason={resp.stop_reason}, output_tokens={resp.usage.output_tokens})"
+            )
+            return state
 
         ap = data.get("activity_patterns", {})
         c_data = data.get("candidate", {})
@@ -224,6 +231,7 @@ def generate_report(state: PipelineState) -> PipelineState:
             generated_at=datetime.now(timezone.utc),
         )
         state["final_report"] = result.model_dump(mode="json")
+        state["current_agent"] = "complete"
     except Exception as exc:
         state["errors"].append(f"report_generator: {exc}")
 

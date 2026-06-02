@@ -12,16 +12,6 @@ Agent files import from this module — nothing hardcoded inline.
 RECENT_CREATION_DAYS = 20
 
 # ---------------------------------------------------------------------------
-# AI code detector
-# ---------------------------------------------------------------------------
-
-# Max commits sampled per repo for AI detection
-SAMPLE_COMMITS = 5
-
-# Max characters taken from each commit patch
-MAX_PATCH_CHARS = 3000
-
-# ---------------------------------------------------------------------------
 # Coherence verifier — skill matching
 # ---------------------------------------------------------------------------
 
