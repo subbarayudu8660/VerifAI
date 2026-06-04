@@ -91,7 +91,7 @@ async def usage(request: Request):
 
 
 @router.get("/results/{run_id}")
-async def results(run_id: str) -> PipelineState:
+async def results(run_id: str):
     if run_id not in _results:
         raise HTTPException(status_code=404, detail="run_id not found")
     return _results[run_id]
