@@ -362,6 +362,14 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 
 ---
 
+### Session 10 — 2026-06-04
+
+**`frontend/vercel.json` — SPA routing fix**
+- Created `verifai/frontend/vercel.json` with a catch-all rewrite: all routes → `/index.html`.
+- Without this, a hard refresh or direct navigation to `/verify` on Vercel returns a 404 because Vercel looks for a file at that path. The rewrite hands all routing to React Router client-side.
+
+---
+
 ### Session 9 — 2026-06-04
 
 **`api/routes.py` — usage visibility**
