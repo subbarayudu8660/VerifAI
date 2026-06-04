@@ -381,7 +381,7 @@ def verify_coherence(state: PipelineState) -> PipelineState:
     state["current_agent"] = "coherence_verifier"
 
     if not state.get("resume_claims"):
-        state["errors"].append("coherence_verifier: no resume_claims, skipping.")
+        state["skipped"].append("coherence_verifier: no resume claims — skipping cross-reference")
         return state
     if not state.get("github_data"):
         state["errors"].append("coherence_verifier: no github_data, skipping.")

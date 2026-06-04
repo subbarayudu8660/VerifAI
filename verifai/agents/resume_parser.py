@@ -97,7 +97,7 @@ def parse_resume(state: PipelineState) -> PipelineState:
     state["current_agent"] = "resume_parser"
 
     if not state.get("resume_raw"):
-        state["errors"].append("resume_parser: no resume text provided, skipping.")
+        state["skipped"].append("resume_parser: no resume provided — GitHub-only mode")
         return state
 
     client = get_client()

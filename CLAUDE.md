@@ -43,16 +43,28 @@ npm run dev
 
 ## Environment Variables
 
-`verifai/.env` (never commit):
+### Railway (backend)
+
+| Variable | Value | Notes |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | LLM calls |
+| `GITHUB_TOKEN` | `ghp_...` | GitHub API — avoids rate limits |
+| `ADMIN_TOKEN` | `verifai-admin-2026` | Bypasses IP rate limit for testing; omit to disable rate limiting entirely |
+
+### Vercel (frontend)
+
+| Variable | Value | Notes |
+|---|---|---|
+| `VITE_API_URL` | `https://verifai-production-d9d4.up.railway.app` | No trailing slash |
+
+### Local (`verifai/.env` — never commit)
+
 ```
 GITHUB_TOKEN=ghp_...
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Railway dashboard needs: `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`
-Vercel dashboard needs: `VITE_API_URL=https://verifai-production-d9d4.up.railway.app` (no trailing slash)
-
-`api.js` reads `import.meta.env.VITE_API_URL || "http://localhost:8000"` — already set up.
+`api.js` reads `import.meta.env.VITE_API_URL || "http://localhost:8000"` — already set up. `ADMIN_TOKEN` is not needed locally (rate limiting is disabled when the env var is unset).
 
 ---
 
@@ -359,6 +371,27 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 - Previous condition: `state.final_report !== null`
 - New condition: `state.final_report !== null || state.current_agent === "complete"`
 - Rationale: if `final_report` is somehow null but `current_agent` is "complete", the pipeline is done and the frontend must still transition — otherwise it polls forever.
+
+---
+
+### Session 12 — 2026-06-04
+
+**Errors vs skips — intentional skips no longer pollute the debug panel**
+- `state.py`: added `skipped: list[str]` to `PipelineState`. Intentional no-ops go here; actual failures go to `errors`.
+- `agents/resume_parser.py`: no-resume early exit now appends to `skipped` ("no resume provided — GitHub-only mode") instead of `errors`.
+- `agents/coherence_verifier.py`: no-resume-claims early exit now appends to `skipped` ("no resume claims — skipping cross-reference") instead of `errors`. The no-github-data path remains in `errors` (that's a real failure, not an expected skip).
+- `api/routes.py`: initial state now includes `"skipped": []`.
+- `ReportView.jsx`: destructures `skipped` from state (available for future use). `DebugInfo` already gates on `errors?.length` — since skips are no longer in `errors`, the debug panel now hides automatically in GitHub-only mode.
+
+---
+
+### Session 11 — 2026-06-04
+
+**Repo cap — 30 most recent repos (`github_scraper.py`, `models.py`, `ReportView.jsx`)**
+- `client.get_repos()` result saved as `all_repos`; then sorted by `pushed_at` descending and sliced to 30 before processing. Keeps scrape time bounded for prolific users.
+- `GitHubScrapeResult` gains two new fields: `repos_capped: bool = False` and `total_repos_found: int = 0`.
+- Both are populated from `len(all_repos)` at construction time.
+- `RepoTable` in `ReportView.jsx` accepts `reposCapped` and `totalReposFound` props; renders a small grey note ("Showing 30 most recent repos out of X total") directly below the section title when capped.
 
 ---
 

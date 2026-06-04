@@ -210,7 +210,8 @@ def scrape_github(state: PipelineState) -> PipelineState:
         state["errors"].append(f"github_scraper: '{username}' has 0 public repositories.")
         return state
 
-    repos = client.get_repos(username)
+    all_repos = client.get_repos(username)
+    repos = sorted(all_repos, key=lambda r: r.get("pushed_at", ""), reverse=True)[:30]
     languages_first_seen: dict[str, str] = {}
     repo_results: list[RepoData] = []
 
@@ -248,6 +249,8 @@ def scrape_github(state: PipelineState) -> PipelineState:
         languages_first_seen=languages_first_seen,
         total_flags=total_flags,
         repos=repo_results,
+        repos_capped=len(all_repos) > 30,
+        total_repos_found=len(all_repos),
     )
 
     state["github_data"] = result.model_dump(mode="json")

@@ -40,6 +40,8 @@ class GitHubScrapeResult(BaseModel):
     languages_first_seen: dict[str, str]    # language → ISO date of first commit
     total_flags: int
     repos: list[RepoData]
+    repos_capped: bool = False              # True when >30 repos were found and truncated
+    total_repos_found: int = 0             # count before capping
 
 
 # ---------------------------------------------------------------------------

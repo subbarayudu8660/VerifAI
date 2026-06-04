@@ -279,12 +279,17 @@ function ProjectMatches({ matches }) {
 // Repo Reference
 // ---------------------------------------------------------------------------
 
-function RepoTable({ repos, username }) {
+function RepoTable({ repos, username, reposCapped, totalReposFound }) {
   if (!repos?.length) return null;
 
   return (
     <div style={card}>
       <div style={sectionTitle}>Repo Reference</div>
+      {reposCapped && (
+        <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 0, marginBottom: 10 }}>
+          Showing 30 most recent repos out of {totalReposFound} total
+        </p>
+      )}
       <table style={table}>
         <thead>
           <tr>
@@ -426,7 +431,7 @@ function DebugInfo({ errors }) {
 // ---------------------------------------------------------------------------
 
 export default function ReportView({ state, onReset }) {
-  const { github_data, skill_verification, project_matches, final_report, errors } = state;
+  const { github_data, skill_verification, project_matches, final_report, errors, skipped } = state;
   console.log('ReportView state keys:', Object.keys(state));
   console.log('project_matches:', project_matches);
 
@@ -465,7 +470,7 @@ export default function ReportView({ state, onReset }) {
       <ProjectMatches matches={project_matches} />
       <ActivityPatterns recruiter={recruiter} />
       <InterviewQuestions recruiter={recruiter} hasResume={hasResume} />
-      <RepoTable repos={github_data?.repos} username={state.github_username} />
+      <RepoTable repos={github_data?.repos} username={state.github_username} reposCapped={github_data?.repos_capped} totalReposFound={github_data?.total_repos_found} />
       <DebugInfo errors={errors} />
     </div>
   );

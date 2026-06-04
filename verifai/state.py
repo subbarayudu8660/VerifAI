@@ -12,4 +12,5 @@ class PipelineState(TypedDict):
     coherence_report: dict | None           # Agent 4 output → Agent 5 input (LLM verdicts)
     final_report: dict | None               # Agent 5 output → Frontend
     errors: list[str]                       # All agents append here; pipeline never halts on error
+    skipped: list[str]                      # Intentional skips (no resume, GitHub-only mode) — not shown as errors
     current_agent: str                      # Set by each agent on entry; Frontend polls this for progress

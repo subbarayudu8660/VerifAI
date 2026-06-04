@@ -74,6 +74,7 @@ async def verify(body: VerifyRequest, background_tasks: BackgroundTasks, request
         "project_matches": None,
         "final_report": None,
         "errors": [],
+        "skipped": [],
         "current_agent": "queued",
     }
     background_tasks.add_task(_run_and_store, run_id, body.github_username, body.resume_text)
