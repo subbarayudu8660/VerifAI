@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import * as pdfjsLib from 'pdfjs-dist';
-import { startVerification } from "../api.js";
+import { getUsage, startVerification } from "../api.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
@@ -30,11 +30,41 @@ async function extractPdfText(file) {
   return text.trim();
 }
 
+function RemainingBadge({ remaining }) {
+  if (remaining === null) return null;
+
+  if (remaining === 0) {
+    return (
+      <p style={{ fontSize: 13, color: "#b91c1c", marginTop: 10, textAlign: "center" }}>
+        You've used all 5 free verifications. Contact{" "}
+        <a href="mailto:sboggavarapu@umass.edu" style={{ color: "#b91c1c" }}>
+          sboggavarapu@umass.edu
+        </a>{" "}
+        for continued access.
+      </p>
+    );
+  }
+
+  const color = remaining === 1 ? "#d97706" : "#9ca3af";
+  return (
+    <p style={{ fontSize: 12, color, marginTop: 10, textAlign: "center" }}>
+      {remaining} free verification{remaining !== 1 ? "s" : ""} remaining
+    </p>
+  );
+}
+
 export default function UploadForm({ onStarted }) {
   const [username, setUsername] = useState("");
   const [pdfFile, setPdfFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [remaining, setRemaining] = useState(null);
+
+  useEffect(() => {
+    getUsage()
+      .then((data) => setRemaining(data.remaining))
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -44,14 +74,20 @@ export default function UploadForm({ onStarted }) {
     try {
       let resumeText = null;
       if (pdfFile) resumeText = await extractPdfText(pdfFile);
-      const { run_id } = await startVerification(username.trim(), resumeText);
-      onStarted(run_id, username.trim());
+      const data = await startVerification(username.trim(), resumeText);
+      setRemaining(data.verifications_remaining ?? null);
+      onStarted(data.run_id, username.trim());
     } catch (err) {
       setError(err.message);
+      // Re-fetch usage in case the count changed server-side
+      getUsage().then((d) => setRemaining(d.remaining)).catch(() => {});
     } finally {
       setLoading(false);
     }
   }
+
+  const isExhausted = remaining === 0;
+  const isDisabled = loading || !username.trim() || isExhausted;
 
   return (
     <div style={s.card}>
@@ -84,11 +120,12 @@ export default function UploadForm({ onStarted }) {
         <br />
         <button
           type="submit"
-          style={{ ...s.btn, ...(loading || !username.trim() ? s.btnDisabled : {}) }}
-          disabled={loading || !username.trim()}
+          style={{ ...s.btn, ...(isDisabled ? s.btnDisabled : {}) }}
+          disabled={isDisabled}
         >
           {loading ? "Starting…" : "Run Verification"}
         </button>
+        <RemainingBadge remaining={remaining} />
       </form>
     </div>
   );

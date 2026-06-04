@@ -105,11 +105,26 @@ function Hero({ onTry }) {
           maxWidth: 580,
           margin: "0 auto 40px",
         }}>
-          VerifAI cross-checks every technical candidate's GitHub against their
-          resume — and tells you exactly what to ask in the interview.
+          Built for hiring junior engineers, new grads, and interns. VerifAI
+          analyzes a candidate's public GitHub activity, verifies their resume
+          claims against real evidence, and generates a structured intelligence
+          report — so you know exactly what to probe before the interview.
         </p>
 
         <PrimaryButton onClick={onTry}>Try it free →</PrimaryButton>
+
+        <p style={{
+          fontSize: 13,
+          color: "#6b7280",
+          marginTop: 16,
+          lineHeight: 1.6,
+          maxWidth: 500,
+          margin: "16px auto 0",
+        }}>
+          Designed specifically for junior engineers, new grads, and interns —
+          where GitHub is the primary signal and there's no prior work history
+          to fall back on.
+        </p>
       </div>
     </section>
   );
@@ -168,7 +183,7 @@ const STEPS = [
   {
     n: "03",
     title: "Get an intelligence report",
-    body: "A structured report with timeline inconsistencies, skill evidence, activity patterns, and specific interview questions.",
+    body: "Get a structured intelligence report — skill evidence, project verification, activity patterns, and targeted interview questions based on what was actually found.",
   },
 ];
 

@@ -429,6 +429,31 @@ export default function ReportView({ state, onReset }) {
   const { github_data, skill_verification, project_matches, final_report, errors } = state;
   console.log('ReportView state keys:', Object.keys(state));
   console.log('project_matches:', project_matches);
+
+  if (!final_report) {
+    const notFoundError = (errors || []).find((e) => e.includes("not found"));
+    return (
+      <div style={{ maxWidth: 680, margin: "60px auto", textAlign: "center", fontFamily: "system-ui" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+        <h2 style={{ color: "#111", marginBottom: 8 }}>Verification Failed</h2>
+        <p style={{ color: "#666", marginBottom: 24 }}>
+          {notFoundError
+            ? "GitHub username not found. Please check the username and try again."
+            : "Something went wrong. Please try again."}
+        </p>
+        {(errors || []).map((err, i) => (
+          <p key={i} style={{ color: "#dc2626", fontSize: 13 }}>{err}</p>
+        ))}
+        <button
+          onClick={onReset}
+          style={{ marginTop: 16, padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: 6, cursor: "pointer" }}
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
   const recruiter = final_report?.recruiter;
   const hasResume = Boolean(state.resume_raw || state.resume_claims);
 

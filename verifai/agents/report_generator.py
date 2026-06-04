@@ -184,6 +184,7 @@ def generate_report(state: PipelineState) -> PipelineState:
 
     if not state.get("github_data"):
         state["errors"].append("report_generator: no github_data, cannot generate report.")
+        state["current_agent"] = "complete"
         return state
 
     client = get_client()
@@ -203,6 +204,7 @@ def generate_report(state: PipelineState) -> PipelineState:
                 f"report_generator: LLM response could not be parsed as JSON "
                 f"(stop_reason={resp.stop_reason}, output_tokens={resp.usage.output_tokens})"
             )
+            state["current_agent"] = "complete"
             return state
 
         ap = data.get("activity_patterns", {})
@@ -234,5 +236,6 @@ def generate_report(state: PipelineState) -> PipelineState:
         state["current_agent"] = "complete"
     except Exception as exc:
         state["errors"].append(f"report_generator: {exc}")
+        state["current_agent"] = "complete"
 
     return state

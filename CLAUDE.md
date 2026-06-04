@@ -362,6 +362,71 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 
 ---
 
+### Session 9 — 2026-06-04
+
+**`api/routes.py` — usage visibility**
+- `VerifyResponse` Pydantic model gains `verifications_remaining: int`.
+- `/verify` now computes `remaining = max(0, FREE_LIMIT - _ip_usage[client_ip])` after incrementing and returns it in the response body.
+- New `GET /usage` endpoint returns `{used, remaining, limit}` for any IP — used by the frontend on load to show count without triggering a run.
+
+**`api.js` — `getUsage` export**
+- Added `export const getUsage` that fetches `GET /usage` and throws on non-OK.
+
+**`UploadForm.jsx` — remaining verifications display**
+- New `remaining` state (null until resolved; null hides the badge).
+- `useEffect` on mount calls `getUsage()` and sets `remaining`; errors are swallowed silently.
+- On successful submit, sets `remaining` from `data.verifications_remaining` returned by the server, then calls `onStarted`.
+- On error, re-fetches `/usage` to sync count in case server incremented before rejecting.
+- `RemainingBadge` component handles display:
+  - `remaining > 1` → grey text "N free verifications remaining"
+  - `remaining === 1` → amber (`#d97706`) "1 free verification remaining"
+  - `remaining === 0` → red message with mailto link; submit button disabled (`isExhausted` flag)
+- Submit button disabled when `loading || !username.trim() || isExhausted`.
+
+---
+
+### Session 8 — 2026-06-04
+
+**Error handling: `current_agent = "complete"` on every exit path in `report_generator.py`**
+- Three early-return paths were missing the terminal state set: the `no github_data` guard, the `_extract_json` failure path, and the bare `except` block.
+- Without this, any pipeline failure left `current_agent` stuck at `"report_generator"` forever and the frontend polled indefinitely.
+
+**GitHub 404 handling in `github_scraper.py`**
+- Added `import requests` so `requests.HTTPError` can be caught specifically.
+- The `get_user` call now has a dedicated `except requests.HTTPError` branch that checks `exc.response.status_code == 404`.
+- On 404: appends user-friendly error ("GitHub user '...' not found. Please check the username and try again."), sets `current_agent = "complete"`, and returns early.
+- Non-404 HTTPErrors and all other exceptions fall through to the original generic handler.
+
+**Frontend error screen in `ReportView.jsx`**
+- Added a null-guard at the top of the default export: when `final_report` is null, renders a centered error card with ⚠️ icon, message, error list, and a "Try Again" button that calls `onReset`.
+- Message is contextual: if any error contains "not found" → shows "GitHub username not found" copy; otherwise generic "Something went wrong."
+- `onReset` prop was already wired in `App.jsx` (`handleReset` → resets to form phase).
+
+**IP rate limiting in `api/routes.py`**
+- Added `_ip_usage: dict[str, int] = defaultdict(int)` and `FREE_LIMIT = 5`.
+- `_get_client_ip()` reads `X-Forwarded-For` first (Railway sets this), falls back to `request.client.host`.
+- `/verify` endpoint now accepts `request: Request`, extracts client IP, checks usage.
+- Rate limit is bypassed if `X-Admin-Token` header matches the `ADMIN_TOKEN` env var. If `ADMIN_TOKEN` is unset, rate limiting is entirely disabled (safe local dev default).
+- Returns HTTP 429 with `{message, contact}` detail on limit exceeded.
+
+**429 handling in `api.js`**
+- `startVerification` now checks `response.status === 429` before the generic `!response.ok` check.
+- On 429: parses `data.detail.message` + `data.detail.contact` and throws a combined error string.
+- `UploadForm` already catches thrown errors and displays them via `setError(err.message)` — no changes needed there.
+
+**Env var to add on Railway:** `ADMIN_TOKEN=<any secret string>` — bypass key for testing without consuming rate limit slots.
+
+---
+
+### Session 7 — 2026-06-04
+
+**LandingPage.jsx — copy updates**
+- Hero subline replaced: now leads with audience ("Built for hiring junior engineers, new grads, and interns") and describes the full pipeline output.
+- Scope note added below the "Try it free" button: small grey text (`fontSize: 13, color: "#6b7280"`) explaining the product is designed for candidates where GitHub is the primary signal. Not a disclaimer — framed as context.
+- "How it works" step 3 body updated: now lists the four specific output types (skill evidence, project verification, activity patterns, targeted interview questions) rather than the previous generic description.
+
+---
+
 ### Session 4 — 2026-06-02
 - Timeline pre-filtering (`_has_time_claim()`), project interview questions, fork annotation, Jupyter rule.
 - Project classification simplified to keyword-only (`CORPORATE_HINTS`).

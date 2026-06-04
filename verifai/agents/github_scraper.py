@@ -11,6 +11,8 @@ Standalone usage:
 import json
 import re
 import sys
+
+import requests
 from datetime import datetime, timezone
 
 from core.constants import RECENT_CREATION_DAYS
@@ -192,6 +194,13 @@ def scrape_github(state: PipelineState) -> PipelineState:
 
     try:
         user = client.get_user(username)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            state["errors"].append(f"github_scraper: GitHub user '{username}' not found. Please check the username and try again.")
+            state["current_agent"] = "complete"
+            return state
+        state["errors"].append(f"github_scraper: failed to fetch user '{username}': {exc}")
+        return state
     except Exception as exc:
         state["errors"].append(f"github_scraper: failed to fetch user '{username}': {exc}")
         return state
