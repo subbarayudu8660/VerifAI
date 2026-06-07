@@ -3,12 +3,18 @@ import { supabase } from "./lib/supabase";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 async function getAuthHeaders() {
-  const { data: { session } } = await supabase.auth.getSession();
-  const headers = { "Content-Type": "application/json" };
-  if (session?.access_token) {
-    headers["Authorization"] = `Bearer ${session.access_token}`;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      return {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`,
+      };
+    }
+  } catch (e) {
+    console.error("[auth] getSession error:", e);
   }
-  return headers;
+  return { "Content-Type": "application/json" };
 }
 
 export const startVerification = async (githubUsername, resumeText) => {
