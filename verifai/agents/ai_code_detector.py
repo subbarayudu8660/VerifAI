@@ -74,6 +74,12 @@ def detect_ai_code(state: PipelineState) -> PipelineState:
         state["errors"].append("ai_code_detector: no repos with commits to analyse.")
         return state
 
+    _FALLBACK = {
+        "overall_ai_likelihood": 0.0,
+        "repos": [],
+        "summary": "Code pattern analysis unavailable for this candidate.",
+    }
+
     try:
         resp = get_client().messages.create(
             model=MODEL,
@@ -81,9 +87,19 @@ def detect_ai_code(state: PipelineState) -> PipelineState:
             system=_SYSTEM,
             messages=[{"role": "user", "content": _build_context(repos)}],
         )
-        data = json.loads(extract_json(resp.content[0].text))
+    except Exception as exc:
+        state["errors"].append(f"ai_code_detector: LLM call failed: {exc}")
+        state["ai_detection"] = _FALLBACK
+        return state
+
+    try:
+        raw = resp.content[0].text.strip()
+        if not raw:
+            raise ValueError("Empty response from Anthropic")
+        data = json.loads(extract_json(raw))
     except Exception as exc:
         state["errors"].append(f"ai_code_detector: {exc}")
+        state["ai_detection"] = _FALLBACK
         return state
 
     repo_lookup = {r["repo_name"]: r for r in repos}

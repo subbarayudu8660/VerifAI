@@ -71,6 +71,8 @@ _compiled = build_graph().compile()
 
 def run_pipeline(github_username: str, resume_raw: str | None = None) -> PipelineState:
     initial: PipelineState = {
+        "run_id": None,
+        "user_id": None,
         "github_username": github_username,
         "resume_raw": resume_raw,
         "resume_claims": None,
@@ -81,14 +83,23 @@ def run_pipeline(github_username: str, resume_raw: str | None = None) -> Pipelin
         "project_matches": None,
         "final_report": None,
         "errors": [],
+        "skipped": [],
         "current_agent": "",
     }
     return _compiled.invoke(initial)
 
 
-def stream_pipeline(github_username: str, resume_raw: str | None = None):
+def stream_pipeline(
+    github_username: str,
+    resume_raw: str | None = None,
+    *,
+    run_id: str | None = None,
+    user_id: str | None = None,
+):
     """Yield full PipelineState after each agent completes."""
     initial: PipelineState = {
+        "run_id": run_id,
+        "user_id": user_id,
         "github_username": github_username,
         "resume_raw": resume_raw,
         "resume_claims": None,
@@ -99,6 +110,7 @@ def stream_pipeline(github_username: str, resume_raw: str | None = None):
         "project_matches": None,
         "final_report": None,
         "errors": [],
+        "skipped": [],
         "current_agent": "",
     }
     yield from _compiled.stream(initial, stream_mode="values")

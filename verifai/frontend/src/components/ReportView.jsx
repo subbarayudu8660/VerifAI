@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -71,7 +73,7 @@ const inlineBadge = (color) => ({
 // Header
 // ---------------------------------------------------------------------------
 
-function CandidateHeader({ state, onReset }) {
+function CandidateHeader({ state, onReset, onDownloadPDF, generatingPDF, onShare, shareCopied }) {
   const gh = state.github_data || {};
   const totalCommits = (gh.repos || []).reduce((a, r) => a + r.total_commits, 0);
   const langCount = Object.keys(gh.languages_first_seen || {}).length;
@@ -96,12 +98,51 @@ function CandidateHeader({ state, onReset }) {
           </div>
           <div style={{ fontSize: 14, color: "#6b7280", marginTop: 3 }}>{meta}</div>
         </div>
-        <button
-          onClick={onReset}
-          style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 13, color: "#6b7280" }}
-        >
-          ← New verification
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={onDownloadPDF}
+            disabled={generatingPDF}
+            style={{
+              padding: "6px 14px",
+              background: "white",
+              color: "#4f46e5",
+              border: "1px solid #4f46e5",
+              borderRadius: 7,
+              cursor: generatingPDF ? "not-allowed" : "pointer",
+              fontSize: 13,
+              fontWeight: 500,
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              opacity: generatingPDF ? 0.6 : 1,
+            }}
+          >
+            {generatingPDF ? "Generating…" : "↓ Download PDF"}
+          </button>
+          {state.run_id && (
+            <button
+              onClick={onShare}
+              style={{
+                padding: "6px 14px",
+                background: "white",
+                color: shareCopied ? "#16a34a" : "#4f46e5",
+                border: `1px solid ${shareCopied ? "#16a34a" : "#4f46e5"}`,
+                borderRadius: 7,
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >
+              {shareCopied ? "✓ Copied!" : "⎘ Share Report"}
+            </button>
+          )}
+          <button
+            onClick={onReset}
+            style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 13, color: "#6b7280" }}
+          >
+            ← New verification
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -405,9 +446,9 @@ function InterviewQuestions({ recruiter, hasResume }) {
 // Debug
 // ---------------------------------------------------------------------------
 
-function DebugInfo({ errors }) {
+function DebugInfo({ errors, hidden }) {
   const [open, setOpen] = useState(false);
-  if (!errors?.length) return null;
+  if (!errors?.length || hidden) return null;
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -432,8 +473,59 @@ function DebugInfo({ errors }) {
 
 export default function ReportView({ state, onReset }) {
   const { github_data, skill_verification, project_matches, final_report, errors, skipped } = state;
+  const reportRef = useRef(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
   console.log('ReportView state keys:', Object.keys(state));
   console.log('project_matches:', project_matches);
+
+  const shareReport = () => {
+    const runId = state.run_id || window.location.pathname.split("/").pop();
+    const url = `${window.location.origin}/report/${runId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    });
+  };
+
+  const downloadPDF = async () => {
+    setGeneratingPDF(true);
+    try {
+      const element = reportRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("portrait", "mm", "a4");
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`verifai-report-${state.github_username}.pdf`);
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
 
   if (!final_report) {
     const notFoundError = (errors || []).find((e) => e.includes("not found"));
@@ -463,15 +555,15 @@ export default function ReportView({ state, onReset }) {
   const hasResume = Boolean(state.resume_raw || state.resume_claims);
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", scrollBehavior: "smooth", overflowAnchor: "none" }}>
-      <CandidateHeader state={state} onReset={onReset} />
+    <div ref={reportRef} style={{ maxWidth: 820, margin: "0 auto", scrollBehavior: "smooth", overflowAnchor: "none" }}>
+      <CandidateHeader state={state} onReset={onReset} onDownloadPDF={downloadPDF} generatingPDF={generatingPDF} onShare={shareReport} shareCopied={shareCopied} />
       <Overview recruiter={recruiter} />
       <SkillEvidence skills={skill_verification} hasResume={hasResume} />
       <ProjectMatches matches={project_matches} />
       <ActivityPatterns recruiter={recruiter} />
       <InterviewQuestions recruiter={recruiter} hasResume={hasResume} />
       <RepoTable repos={github_data?.repos} username={state.github_username} reposCapped={github_data?.repos_capped} totalReposFound={github_data?.total_repos_found} />
-      <DebugInfo errors={errors} />
+      <DebugInfo errors={errors} hidden={generatingPDF} />
     </div>
   );
 }

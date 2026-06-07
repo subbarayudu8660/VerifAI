@@ -1,30 +1,104 @@
 import json
-import os
+import logging
 import uuid
-from collections import defaultdict
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel
 
+from core.supabase_client import get_supabase
 from pipeline import stream_pipeline
 from state import PipelineState
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-_results: dict[str, PipelineState] = {}
-_ip_usage: dict[str, int] = defaultdict(int)
+_results: dict[str, PipelineState] = {}   # in-memory cache — cleared on restart
 FREE_LIMIT = 5
 
-
-def _get_client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host
 _OUTPUTS_DIR = Path(__file__).parent.parent / "outputs"
 _OUTPUTS_DIR.mkdir(exist_ok=True)
 
+
+# ---------------------------------------------------------------------------
+# Auth helper
+# ---------------------------------------------------------------------------
+
+def _extract_user_id(authorization: str | None) -> str | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[len("Bearer "):]
+    try:
+        user = get_supabase().auth.get_user(token)
+        return user.user.id if user and user.user else None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Supabase helpers
+# ---------------------------------------------------------------------------
+
+def get_user_verification_count(user_id: str) -> int:
+    try:
+        supabase = get_supabase()
+        result = (
+            supabase.table("verifications")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return result.count or 0
+    except Exception as e:
+        print(f"[supabase] count error: {e}")
+        return 0
+
+
+def save_result(run_id: str, state: dict) -> None:
+    """Persist state to Supabase. Non-fatal — errors are logged, not raised."""
+    try:
+        supabase = get_supabase()
+        result = supabase.table("verifications").upsert({
+            "id": run_id,
+            "user_id": state.get("user_id"),
+            "github_username": state.get("github_username", ""),
+            "resume_provided": state.get("resume_raw") is not None,
+            "github_data": state.get("github_data"),
+            "skill_verification": state.get("skill_verification"),
+            "project_matches": state.get("project_matches"),
+            "final_report": state.get("final_report"),
+            "errors": state.get("errors", []),
+            "current_agent": state.get("current_agent", "queued"),
+        }).execute()
+        print(f"[supabase] saved run {run_id}")
+    except Exception as exc:
+        print(f"[supabase] SAVE ERROR: {exc}")
+        logger.warning("Supabase save_result failed for %s: %s", run_id, exc)
+
+
+def get_result(run_id: str) -> dict | None:
+    if run_id in _results:
+        return _results[run_id]
+    try:
+        supabase = get_supabase()
+        result = (
+            supabase.table("verifications")
+            .select("*")
+            .eq("id", run_id)
+            .single()
+            .execute()
+        )
+        if result.data:
+            print(f"[supabase] fetched {run_id} from database")
+            return result.data
+    except Exception as e:
+        print(f"[supabase] GET ERROR: {e}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
 
 class VerifyRequest(BaseModel):
     github_username: str
@@ -37,33 +111,52 @@ class VerifyResponse(BaseModel):
     verifications_remaining: int
 
 
-def _run_and_store(run_id: str, username: str, resume: str | None) -> None:
+# ---------------------------------------------------------------------------
+# Background task
+# ---------------------------------------------------------------------------
+
+def _run_and_store(run_id: str, username: str, resume: str | None, user_id: str | None) -> None:
     state = None
-    for state in stream_pipeline(username, resume):
-        _results[run_id] = state  # live update after each agent
+    for state in stream_pipeline(username, resume, run_id=run_id, user_id=user_id):
+        _results[run_id] = state
+        save_result(run_id, state)
     if state is not None:
         out_file = _OUTPUTS_DIR / f"{run_id}.json"
         out_file.write_text(json.dumps(state, indent=2, default=str))
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @router.post("/verify", response_model=VerifyResponse)
-async def verify(body: VerifyRequest, background_tasks: BackgroundTasks, request: Request) -> VerifyResponse:
-    client_ip = _get_client_ip(request)
-    admin_token = request.headers.get("X-Admin-Token", "")
-    admin_secret = os.getenv("ADMIN_TOKEN", "")
-    if admin_secret and admin_token != admin_secret:
-        if _ip_usage[client_ip] >= FREE_LIMIT:
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": "You've used your 5 free verifications.",
-                    "contact": "Contact sboggavarapu@umass.edu for continued access.",
-                },
-            )
-    _ip_usage[client_ip] += 1
+async def verify(
+    body: VerifyRequest,
+    background_tasks: BackgroundTasks,
+    authorization: str | None = Header(None),
+) -> VerifyResponse:
+    user_id = _extract_user_id(authorization)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Please sign in to verify candidates."},
+        )
+
+    count = get_user_verification_count(user_id)
+    if count >= FREE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": f"You've used all {FREE_LIMIT} free verifications.",
+                "contact": "Contact sboggavarapu@umass.edu for more access.",
+            },
+        )
 
     run_id = str(uuid.uuid4())
-    _results[run_id] = {
+    initial_state: PipelineState = {
+        "run_id": run_id,
+        "user_id": user_id,
         "github_username": body.github_username,
         "resume_raw": body.resume_text,
         "resume_claims": None,
@@ -77,21 +170,47 @@ async def verify(body: VerifyRequest, background_tasks: BackgroundTasks, request
         "skipped": [],
         "current_agent": "queued",
     }
-    background_tasks.add_task(_run_and_store, run_id, body.github_username, body.resume_text)
-    remaining = max(0, FREE_LIMIT - _ip_usage[client_ip])
+    _results[run_id] = initial_state
+    save_result(run_id, initial_state)
+
+    background_tasks.add_task(_run_and_store, run_id, body.github_username, body.resume_text, user_id)
+    remaining = max(0, FREE_LIMIT - count - 1)
     return VerifyResponse(run_id=run_id, verifications_remaining=remaining)
 
 
 @router.get("/usage")
-async def usage(request: Request):
-    client_ip = _get_client_ip(request)
-    used = _ip_usage[client_ip]
+async def usage(authorization: str | None = Header(None)):
+    user_id = _extract_user_id(authorization)
+    if not user_id:
+        return {"used": 0, "remaining": FREE_LIMIT, "limit": FREE_LIMIT}
+    used = get_user_verification_count(user_id)
     remaining = max(0, FREE_LIMIT - used)
     return {"used": used, "remaining": remaining, "limit": FREE_LIMIT}
 
 
+@router.get("/history")
+async def history(authorization: str | None = Header(None)):
+    user_id = _extract_user_id(authorization)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        supabase = get_supabase()
+        result = (
+            supabase.table("verifications")
+            .select("id, github_username, created_at, current_agent")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return {"verifications": result.data or []}
+    except Exception as e:
+        print(f"[supabase] history error: {e}")
+        return {"verifications": []}
+
+
 @router.get("/results/{run_id}")
 async def results(run_id: str):
-    if run_id not in _results:
-        raise HTTPException(status_code=404, detail="run_id not found")
-    return _results[run_id]
+    state = get_result(run_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return state

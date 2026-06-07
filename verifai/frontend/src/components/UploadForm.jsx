@@ -53,7 +53,15 @@ function RemainingBadge({ remaining }) {
   );
 }
 
-export default function UploadForm({ onStarted }) {
+export default function UploadForm({ onStarted, user }) {
+  if (!user) {
+    return (
+      <div style={{ textAlign: "center", padding: "40px" }}>
+        <p style={{ color: "#374151", marginBottom: 16 }}>Please sign in to verify candidates.</p>
+        <a href="/login" style={{ color: "#4f46e5", fontSize: 15 }}>Sign in with Google →</a>
+      </div>
+    );
+  }
   const [username, setUsername] = useState("");
   const [pdfFile, setPdfFile] = useState(null);
   const [loading, setLoading] = useState(false);

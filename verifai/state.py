@@ -2,6 +2,8 @@ from typing import TypedDict
 
 
 class PipelineState(TypedDict):
+    run_id: str | None                      # Set by routes.py; included in results so frontend can build share URLs
+    user_id: str | None                     # Supabase user ID from JWT; None for anonymous runs
     github_username: str                    # Input — provided by user
     resume_raw: str | None                  # Input — provided by user (plain text extracted from PDF)
     resume_claims: dict | None              # Agent 1 output → Agent 4 input

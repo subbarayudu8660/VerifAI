@@ -374,6 +374,103 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 
 ---
 
+### Session 16 — 2026-06-07
+
+**Navbar, past verifications, history page**
+
+- `VerifyPage.jsx` (rewritten): Replaced the old centered-logo header with a proper navbar (VerifAI logo left, user email + Sign out button right). Phase names updated: `"done"` → `"report"`. Added past verifications panel below the form: fetches `/history` on mount and whenever `phase` changes back to `"form"` (so it refreshes after a new run). Shows 5 most recent with links to `/report/:id`; shows "See all N verifications →" link to `/history` when more than 5.
+- `HistoryPage.jsx` (new): Full list of all verifications for the logged-in user. Fetches `/history`, redirects to `/login` if no session. Protected route — linked from `/history`.
+- `api/routes.py`: Added `GET /history` endpoint. Uses `_extract_user_id` helper (no duplication). Queries `verifications` table selecting `id, github_username, created_at, current_agent`, ordered by `created_at desc`. Returns `{verifications: []}` on Supabase error.
+- `App.jsx`: Added `HistoryPage` import and `/history` protected route (redirects to `/login` if not authed).
+
+Note: The instruction's JSX had a malformed `<a` tag in both `VerifyPage` and `HistoryPage` map calls (opening tag was stripped). Fixed in implementation.
+
+---
+
+### Session 15 — 2026-06-07
+
+**Rate limiting: IP-based → account-based via Supabase**
+
+- `api/routes.py`:
+  - Removed `_ip_usage` dict, `defaultdict` import, `os` import, `_get_client_ip()`, `ADMIN_TOKEN` bypass — all IP-based logic gone.
+  - Added `_extract_user_id(authorization)` helper: extracts Supabase user ID from `Bearer` JWT; returns `None` on failure. Used by both `/verify` and `/usage` to avoid duplication.
+  - Added `get_user_verification_count(user_id)` — queries `verifications` table with `count="exact"` for the user's row count.
+  - `/verify` now requires auth: returns 401 if no valid JWT. Checks Supabase count before running; returns 429 if `count >= FREE_LIMIT`. `verifications_remaining` computed as `FREE_LIMIT - count - 1` (count is pre-run).
+  - `/usage` now uses Supabase count. Returns `{used: 0, remaining: 5}` for unauthenticated callers.
+  - `request: Request` parameter removed from both endpoints (no longer needed).
+- `api.js`: Added 401 handler in `startVerification` before the 429 check.
+- `UploadForm.jsx`: Accepts `user` prop; renders sign-in prompt with link to `/login` if `user` is falsy.
+- `VerifyPage.jsx`: Passes `user={user}` to `UploadForm`.
+
+Note: `ADMIN_TOKEN` env var on Railway can be removed. To give yourself unlimited verifications, delete your rows from the `verifications` table in Supabase or increase `FREE_LIMIT`.
+
+---
+
+### Session 14 — 2026-06-07
+
+**Supabase integration: auth + persistent storage + shareable links**
+
+**Backend**
+- `core/supabase_client.py` (new): `get_supabase()` factory; requires `SUPABASE_URL` + `SUPABASE_SECRET_KEY` env vars.
+- `state.py`: added `run_id: str | None` and `user_id: str | None` to `PipelineState`.
+- `pipeline.py`: `stream_pipeline()` now accepts `run_id` and `user_id` keyword args; both flow through all agents as pass-through state. Also fixed latent bug: added `skipped: []` to both `stream_pipeline` and `run_pipeline` initial states (was missing — agents that append to `skipped` would have hit `KeyError`).
+- `api/routes.py`:
+  - `save_result(run_id, state)` — upserts to Supabase `verifications` table. Stores individual columns (`user_id`, `github_username`, `resume_provided`, `github_data`, `skill_verification`, `project_matches`, `final_report`, `errors`, `current_agent`) **plus** a `state_data` JSONB column (full state for retrieval). Non-fatal — errors are logged, not raised.
+  - `get_result(run_id)` — fetches `state_data` from Supabase. Used when run_id not in `_results` cache (e.g., after Railway restart).
+  - `/verify`: extracts Supabase user from `Authorization: Bearer <token>` header (JWT). Sets `user_id` in state. Saves initial state to Supabase immediately. Passes `run_id` and `user_id` to `stream_pipeline`.
+  - `_run_and_store`: now accepts `user_id`; calls `save_result()` after each agent step (5 writes total per run).
+  - `/results/{run_id}`: serves from `_results` cache first; falls back to Supabase if missing (persists across restarts).
+  - `run_id` is now part of state, so it's returned in `/results/{run_id}` response — frontend can use it for share URLs.
+
+**Supabase table required** (`verifications`):
+```sql
+id uuid primary key,
+user_id uuid references auth.users,
+github_username text,
+resume_provided bool,
+github_data jsonb,
+skill_verification jsonb,
+project_matches jsonb,
+final_report jsonb,
+errors jsonb,
+current_agent text,
+state_data jsonb,
+created_at timestamptz default now()
+```
+
+**Frontend**
+- `src/lib/supabase.js` (new): Supabase client using `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY`.
+- `src/components/Auth.jsx` (new): Google OAuth sign-in page. Redirects to `/verify` on success.
+- `src/components/VerifyPage.jsx` (new): Extracted from `App.jsx` inline. Accepts `user` prop (unused currently).
+- `src/components/ReportPage.jsx` (new): Public shareable report page at `/report/:runId`. Fetches from `/results/{runId}`, renders `ReportView`. No auth required.
+- `src/App.jsx`: Rewrote. Adds `user`/`loading` state from `supabase.auth.getSession()` + `onAuthStateChange`. Protected routes: `/verify` requires auth (redirects to `/login`). `/login` redirects to `/verify` if already signed in. `/report/:runId` is public.
+- `src/api.js`: `getAuthHeaders()` reads Supabase session and attaches `Authorization: Bearer <token>` if logged in. All three exports (`startVerification`, `getResults`, `getUsage`) use it.
+- `src/components/ReportView.jsx`: Added Share Report button in the header button row (only shown when `state.run_id` is present). Copies `/report/:runId` URL to clipboard; button turns green "✓ Copied!" for 2s.
+
+**New env vars needed**:
+- Railway: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
+- Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+**Install commands** (not yet run):
+```bash
+pip install supabase                    # in verifai/
+cd frontend && npm install @supabase/supabase-js
+```
+
+---
+
+### Session 13 — 2026-06-06
+
+**PDF download added to `ReportView.jsx`**
+- Installed `jspdf` and `html2canvas` (run `npm install jspdf html2canvas` in `verifai/frontend/`).
+- Added `useRef` + `html2canvas`/`jsPDF` imports to `ReportView.jsx`.
+- `ref={reportRef}` placed on the main report container `<div>` so the entire report is captured.
+- `downloadPDF` function: uses `html2canvas` (scale 2, white background, CORS enabled), then slices the canvas into A4 pages via a `while (heightLeft > 0)` loop. Saves as `verifai-report-<username>.pdf`.
+- `[generatingPDF, setGeneratingPDF]` state: button shows "Generating…" and is disabled while capture runs; `DebugInfo` is hidden (`hidden` prop) during capture so it doesn't appear in the PDF.
+- `CandidateHeader` updated to accept `onDownloadPDF` and `generatingPDF` props; renders both buttons in a flex row at top right (Download PDF first, then ← New verification).
+
+---
+
 ### Session 12 — 2026-06-04
 
 **Errors vs skips — intentional skips no longer pollute the debug panel**
