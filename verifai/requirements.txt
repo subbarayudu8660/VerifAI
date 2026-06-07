@@ -6,3 +6,6 @@ anthropic
 requests
 pydantic
 python-dotenv
+supabase==2.31.0
+supabase-auth==2.31.0
+supabase-functions==2.31.0
