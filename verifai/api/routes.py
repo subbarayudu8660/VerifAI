@@ -111,6 +111,13 @@ class VerifyResponse(BaseModel):
     verifications_remaining: int
 
 
+class FeedbackRequest(BaseModel):
+    run_id: str | None = None
+    github_username: str | None = None
+    rating: str | None = None
+    comment: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Background task
 # ---------------------------------------------------------------------------
@@ -206,6 +213,22 @@ async def history(authorization: str | None = Header(None)):
     except Exception as e:
         print(f"[supabase] history error: {e}")
         return {"verifications": []}
+
+
+@router.post("/feedback")
+async def feedback(body: FeedbackRequest):
+    try:
+        supabase = get_supabase()
+        supabase.table("feedback").insert({
+            "run_id": body.run_id,
+            "github_username": body.github_username,
+            "rating": body.rating,
+            "comment": body.comment,
+        }).execute()
+        print(f"[feedback] {body.rating} for {body.github_username}")
+    except Exception as e:
+        print(f"[feedback] error: {e}")
+    return {"ok": True}
 
 
 @router.get("/results/{run_id}")

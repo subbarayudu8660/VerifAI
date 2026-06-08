@@ -374,6 +374,25 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 
 ---
 
+### Session 17 — 2026-06-08
+
+**Feedback widget**
+
+- `ReportView.jsx`: Added `FeedbackWidget` self-contained component (own state: `rating`, `comment`, `submitted`). Renders after `DebugInfo` at the bottom of every completed report. Hidden during PDF generation (`hidden={generatingPDF}`). Shows 👍/👎 buttons; textarea + Submit appear after a rating is selected; replaces with "Thanks for your feedback! 🙏" on submit. POSTs to `/feedback` silently (errors swallowed). `run_id` falls back to `state.id` for Supabase-fetched rows. Added `API_BASE` constant at top of file.
+- `api/routes.py`: Added `FeedbackRequest` Pydantic model and `POST /feedback` endpoint. Inserts `run_id`, `github_username`, `rating`, `comment` into Supabase `feedback` table. Always returns `{"ok": True}` — never errors to the client.
+
+**Supabase table required** (`feedback`):
+```sql
+id uuid primary key default gen_random_uuid(),
+run_id uuid,
+github_username text,
+rating text,
+comment text,
+created_at timestamptz default now()
+```
+
+---
+
 ### Session 16 — 2026-06-07
 
 **Navbar, past verifications, history page**

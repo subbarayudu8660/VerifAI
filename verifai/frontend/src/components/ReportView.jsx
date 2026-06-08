@@ -2,6 +2,8 @@ import React, { useState, useRef } from "react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
@@ -468,6 +470,113 @@ function DebugInfo({ errors, hidden }) {
 }
 
 // ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+function FeedbackWidget({ githubUsername, runId, hidden }) {
+  const [rating, setRating] = useState(null);
+  const [comment, setComment] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  if (hidden) return null;
+
+  const handleSubmit = async () => {
+    try {
+      await fetch(`${API_BASE}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, comment, github_username: githubUsername, run_id: runId }),
+      });
+    } catch (e) {
+      // fail silently
+    }
+    setSubmitted(true);
+  };
+
+  return (
+    <div style={{
+      maxWidth: 680,
+      margin: "32px auto",
+      padding: 24,
+      background: "#f9fafb",
+      borderRadius: 8,
+      border: "1px solid #e5e7eb",
+      textAlign: "center",
+    }}>
+      {!submitted ? (
+        <>
+          <p style={{ margin: "0 0 16px", color: "#374151", fontWeight: 500 }}>
+            Was this report useful?
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 16 }}>
+            <button
+              onClick={() => setRating("yes")}
+              style={{
+                padding: "8px 20px",
+                border: `2px solid ${rating === "yes" ? "#16a34a" : "#e5e7eb"}`,
+                background: rating === "yes" ? "#f0fdf4" : "white",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 18,
+              }}
+            >👍</button>
+            <button
+              onClick={() => setRating("no")}
+              style={{
+                padding: "8px 20px",
+                border: `2px solid ${rating === "no" ? "#dc2626" : "#e5e7eb"}`,
+                background: rating === "no" ? "#fef2f2" : "white",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 18,
+              }}
+            >👎</button>
+          </div>
+          {rating && (
+            <>
+              <textarea
+                placeholder="Tell us why (optional)..."
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                  fontSize: 14,
+                  resize: "vertical",
+                  minHeight: 80,
+                  marginBottom: 12,
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                onClick={handleSubmit}
+                style={{
+                  padding: "8px 24px",
+                  background: "#4f46e5",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
+                Submit
+              </button>
+            </>
+          )}
+        </>
+      ) : (
+        <p style={{ color: "#16a34a", margin: 0, fontWeight: 500 }}>
+          Thanks for your feedback! 🙏
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 
@@ -564,6 +673,7 @@ export default function ReportView({ state, onReset }) {
       <InterviewQuestions recruiter={recruiter} hasResume={hasResume} />
       <RepoTable repos={github_data?.repos} username={state.github_username} reposCapped={github_data?.repos_capped} totalReposFound={github_data?.total_repos_found} />
       <DebugInfo errors={errors} hidden={generatingPDF} />
+      <FeedbackWidget githubUsername={state.github_username} runId={state.run_id || state.id} hidden={generatingPDF} />
     </div>
   );
 }
