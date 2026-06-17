@@ -129,8 +129,31 @@ class CandidateReport(BaseModel):
     summary: str
 
 
+# ---------------------------------------------------------------------------
+# Recruiter Brief (Agent 5 — top-layer 30-second summary)
+# ---------------------------------------------------------------------------
+
+class StrongestWork(BaseModel):
+    repo_name: str | None = None
+    summary: str
+
+
+class CallQuestion(BaseModel):
+    ask: str
+    listen_for: str
+
+
+class RecruiterBrief(BaseModel):
+    one_liner: str
+    strongest_work: StrongestWork
+    confirmed_skills_line: str
+    call_questions: list[CallQuestion]
+    profile_consistency: str
+
+
 class FinalReport(BaseModel):
     recruiter: RecruiterReport
     candidate: CandidateReport
+    recruiter_brief: RecruiterBrief | None = None
     generated_at: datetime
     pipeline_version: str = "0.1.0"

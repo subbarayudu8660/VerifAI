@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 _results: dict[str, PipelineState] = {}   # in-memory cache — cleared on restart
 FREE_LIMIT = 5
+UNLIMITED_EMAILS: set[str] = {"sboggavarapu@umass.edu", "subbarayudu8660@gmail.com"}
 
 _OUTPUTS_DIR = Path(__file__).parent.parent / "outputs"
 _OUTPUTS_DIR.mkdir(exist_ok=True)
@@ -24,15 +25,23 @@ _OUTPUTS_DIR.mkdir(exist_ok=True)
 # Auth helper
 # ---------------------------------------------------------------------------
 
-def _extract_user_id(authorization: str | None) -> str | None:
+def _get_user_info(authorization: str | None) -> tuple[str | None, str | None]:
+    """Returns (user_id, email) from a Bearer token, or (None, None) on failure."""
     if not authorization or not authorization.startswith("Bearer "):
-        return None
+        return None, None
     token = authorization[len("Bearer "):]
     try:
-        user = get_supabase().auth.get_user(token)
-        return user.user.id if user and user.user else None
+        resp = get_supabase().auth.get_user(token)
+        if resp and resp.user:
+            return resp.user.id, resp.user.email
     except Exception:
-        return None
+        pass
+    return None, None
+
+
+def _extract_user_id(authorization: str | None) -> str | None:
+    user_id, _ = _get_user_info(authorization)
+    return user_id
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +151,7 @@ async def verify(
     background_tasks: BackgroundTasks,
     authorization: str | None = Header(None),
 ) -> VerifyResponse:
-    user_id = _extract_user_id(authorization)
+    user_id, user_email = _get_user_info(authorization)
 
     if not user_id:
         raise HTTPException(
@@ -150,15 +159,21 @@ async def verify(
             detail={"message": "Please sign in to verify candidates."},
         )
 
-    count = get_user_verification_count(user_id)
-    if count >= FREE_LIMIT:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "message": f"You've used all {FREE_LIMIT} free verifications.",
-                "contact": "Contact sboggavarapu@umass.edu for more access.",
-            },
-        )
+    unlimited = user_email in UNLIMITED_EMAILS
+    if not unlimited:
+        count = get_user_verification_count(user_id)
+        if count >= FREE_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "message": f"You've used all {FREE_LIMIT} free verifications.",
+                    "contact": "Contact sboggavarapu@umass.edu for more access.",
+                },
+            )
+        remaining = max(0, FREE_LIMIT - count - 1)
+    else:
+        count = 0
+        remaining = FREE_LIMIT
 
     run_id = str(uuid.uuid4())
     initial_state: PipelineState = {
@@ -181,18 +196,19 @@ async def verify(
     save_result(run_id, initial_state)
 
     background_tasks.add_task(_run_and_store, run_id, body.github_username, body.resume_text, user_id)
-    remaining = max(0, FREE_LIMIT - count - 1)
     return VerifyResponse(run_id=run_id, verifications_remaining=remaining)
 
 
 @router.get("/usage")
 async def usage(authorization: str | None = Header(None)):
-    user_id = _extract_user_id(authorization)
+    user_id, user_email = _get_user_info(authorization)
     if not user_id:
-        return {"used": 0, "remaining": FREE_LIMIT, "limit": FREE_LIMIT}
+        return {"used": 0, "remaining": FREE_LIMIT, "limit": FREE_LIMIT, "unlimited": False}
+    if user_email in UNLIMITED_EMAILS:
+        return {"used": 0, "remaining": FREE_LIMIT, "limit": FREE_LIMIT, "unlimited": True}
     used = get_user_verification_count(user_id)
     remaining = max(0, FREE_LIMIT - used)
-    return {"used": used, "remaining": remaining, "limit": FREE_LIMIT}
+    return {"used": used, "remaining": remaining, "limit": FREE_LIMIT, "unlimited": False}
 
 
 @router.get("/history")

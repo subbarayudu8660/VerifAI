@@ -151,6 +151,91 @@ function CandidateHeader({ state, onReset, onDownloadPDF, generatingPDF, onShare
 }
 
 // ---------------------------------------------------------------------------
+// Recruiter Brief
+// ---------------------------------------------------------------------------
+
+function RecruiterBriefSection({ brief }) {
+  if (!brief) return null;
+
+  return (
+    <div style={{
+      background: "white",
+      border: "2px solid #4f46e5",
+      borderRadius: 12,
+      padding: 28,
+      marginBottom: 32,
+    }}>
+      <div style={{
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#4f46e5",
+        textTransform: "uppercase",
+        letterSpacing: "0.05em",
+        marginBottom: 16,
+      }}>
+        Quick Brief — 30 Second Read
+      </div>
+
+      <p style={{ fontSize: 17, fontWeight: 600, color: "#111", marginBottom: 20, lineHeight: 1.5 }}>
+        {brief.one_liner}
+      </p>
+
+      {brief.strongest_work?.repo_name && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+            Strongest Work
+          </div>
+          <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.6 }}>
+            {brief.strongest_work.summary}
+          </p>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+          Skills
+        </div>
+        <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.6 }}>
+          {brief.confirmed_skills_line}
+        </p>
+      </div>
+
+      {brief.call_questions?.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+            What to Ask on the Call
+          </div>
+          {brief.call_questions.map((q, i) => (
+            <div key={i} style={{
+              background: "#f9fafb",
+              borderRadius: 8,
+              padding: "12px 14px",
+              marginBottom: 8,
+            }}>
+              <p style={{ fontSize: 14, color: "#111", margin: "0 0 4px", fontWeight: 500 }}>
+                Ask: "{q.ask}"
+              </p>
+              <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
+                Listen for: {q.listen_for}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+          Profile Consistency
+        </div>
+        <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.6 }}>
+          {brief.profile_consistency}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Overview
 // ---------------------------------------------------------------------------
 
@@ -661,11 +746,30 @@ export default function ReportView({ state, onReset }) {
   }
 
   const recruiter = final_report?.recruiter;
+  const recruiterBrief = final_report?.recruiter_brief;
   const hasResume = Boolean(state.resume_raw || state.resume_claims);
 
   return (
     <div ref={reportRef} style={{ maxWidth: 820, margin: "0 auto", scrollBehavior: "smooth", overflowAnchor: "none" }}>
       <CandidateHeader state={state} onReset={onReset} onDownloadPDF={downloadPDF} generatingPDF={generatingPDF} onShare={shareReport} shareCopied={shareCopied} />
+      <RecruiterBriefSection brief={recruiterBrief} />
+      {recruiterBrief && (
+        <div style={{ textAlign: "center", margin: "32px 0", position: "relative" }}>
+          <div style={{ borderTop: "1px solid #e5e7eb" }}></div>
+          <span style={{
+            position: "relative",
+            top: -12,
+            background: "#f9fafb",
+            padding: "0 16px",
+            fontSize: 12,
+            color: "#9ca3af",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}>
+            Full Technical Evidence Below
+          </span>
+        </div>
+      )}
       <Overview recruiter={recruiter} />
       <SkillEvidence skills={skill_verification} hasResume={hasResume} />
       <ProjectMatches matches={project_matches} />

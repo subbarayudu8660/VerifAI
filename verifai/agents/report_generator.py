@@ -16,10 +16,13 @@ from datetime import datetime, timezone
 from core.llm import MODEL, get_client
 from core.models import (
     ActivityPatterns,
+    CallQuestion,
     CandidateReport,
     FinalReport,
     ProjectInterviewQuestion,
+    RecruiterBrief,
     RecruiterReport,
+    StrongestWork,
 )
 from state import PipelineState
 
@@ -58,6 +61,26 @@ You have access to:
 Return JSON with exactly this structure:
 
 {
+  "recruiter_brief": {
+    "one_liner": "Single dynamic sentence summarizing activity and claim verification. Vary structure based on actual findings. Let the actual numbers drive the sentence structure. Examples: '19 repos across 5 months, all 3 resume projects publicly visible' OR '6 repos in 2 weeks, 0 of 3 resume projects found' OR '14 months of steady activity, 2 of 4 projects confirmed'. Never use the same template twice conceptually.",
+
+    "strongest_work": {
+      "repo_name": "name of the repo with most substantial evidence of sustained effort, or null if none qualifies",
+      "summary": "Two sentences max. Factual spotlight: commit count, timespan, languages, maintenance status. Example: 'VerifAI — 21 commits over 6 weeks, multi-language (Python/JS/HTML), actively maintained. This is the candidate's most substantial public project.' If no repo qualifies (all single-commit uploads), write: 'No project with sustained development history found.' and set repo_name to null."
+    },
+
+    "confirmed_skills_line": "One sentence. Format: '[Confirmed skills] confirmed in code. [Unconfirmed skills] listed on resume but not found in public repos.' Example: 'Python, Streamlit, and Requests confirmed in code. Java, pandas, scikit-learn, and 7 others listed on resume but not found in public repos.' If no resume was provided, describe the languages observed in GitHub only.",
+
+    "call_questions": [
+      {
+        "ask": "The exact question to ask, phrased naturally for a phone call",
+        "listen_for": "What a confident specific answer sounds like vs what evasiveness sounds like. This is the KEY field — it must let a non-technical person evaluate the response without any technical knowledge. Focus on specificity, immediacy, and confidence vs hesitation and vagueness."
+      }
+    ],
+
+    "profile_consistency": "One factual sentence comparing what languages/skills appear in GitHub activity vs what is claimed on resume. No verdict, no judgment word like 'inconsistent' or 'suspicious'. Just plain observation. Example: 'GitHub active in Python, HTML, JavaScript. Resume lists Java, Julia, scikit-learn — these appear on the resume only.' If no resume, note what the GitHub profile shows."
+  },
+
   "overview": "2-3 sentence factual summary of what this GitHub profile shows. Focus on what IS there, not what is missing. No verdict.",
 
   "activity_patterns": {
@@ -82,6 +105,12 @@ Return JSON with exactly this structure:
     "summary": "2-3 sentence professional summary"
   }
 }
+
+recruiter_brief rules:
+- Generate 2-3 call_questions maximum, prioritizing the most significant unmatched claims or notable patterns
+- Every field must be grounded in actual data from this candidate — never generic boilerplate
+- This section is read by a NON-TECHNICAL recruiter in under 30 seconds — no jargon, no technical terms without explanation
+- Make every sentence sound specific to this candidate's actual numbers and findings
 
 project_interview_questions rules:
 Generate a MAXIMUM of 5 interview questions total. Priority order:
@@ -194,7 +223,7 @@ def generate_report(state: PipelineState) -> PipelineState:
     try:
         resp = client.messages.create(
             model=MODEL,
-            max_tokens=4096,
+            max_tokens=6000,
             system=_SYSTEM,
             messages=[{"role": "user", "content": _build_context(state)}],
         )
@@ -209,6 +238,24 @@ def generate_report(state: PipelineState) -> PipelineState:
 
         ap = data.get("activity_patterns", {})
         c_data = data.get("candidate", {})
+        rb_data = data.get("recruiter_brief", {})
+        sw_data = rb_data.get("strongest_work", {})
+
+        recruiter_brief = None
+        if rb_data:
+            recruiter_brief = RecruiterBrief(
+                one_liner=rb_data.get("one_liner", ""),
+                strongest_work=StrongestWork(
+                    repo_name=sw_data.get("repo_name"),
+                    summary=sw_data.get("summary", ""),
+                ),
+                confirmed_skills_line=rb_data.get("confirmed_skills_line", ""),
+                call_questions=[
+                    CallQuestion(**q)
+                    for q in rb_data.get("call_questions", [])
+                ],
+                profile_consistency=rb_data.get("profile_consistency", ""),
+            )
 
         result = FinalReport(
             recruiter=RecruiterReport(
@@ -230,6 +277,7 @@ def generate_report(state: PipelineState) -> PipelineState:
                 areas_to_address=c_data.get("areas_to_address", []),
                 summary=c_data.get("summary", ""),
             ),
+            recruiter_brief=recruiter_brief,
             generated_at=datetime.now(timezone.utc),
         )
         state["final_report"] = result.model_dump(mode="json")

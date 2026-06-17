@@ -374,6 +374,22 @@ Report redesigned (no score/risk). `core/constants.py` created. Skill aliases ti
 
 ---
 
+### Session 18 — 2026-06-17
+
+**Two-layer report: Recruiter Brief (top) + Technical Evidence (below)**
+
+- `core/models.py`: Added `StrongestWork`, `CallQuestion`, `RecruiterBrief` Pydantic models. Added `recruiter_brief: RecruiterBrief | None = None` to `FinalReport`.
+- `agents/report_generator.py`:
+  - Imported `CallQuestion`, `RecruiterBrief`, `StrongestWork`.
+  - Expanded `_SYSTEM` to include a `recruiter_brief` block at the top of the JSON output schema, with explicit instructions for non-technical readability, data-driven one-liner, strongest work spotlight, skills line, 2–3 call questions with `listen_for` guidance, and a neutral profile consistency sentence.
+  - `generate_report`: builds `RecruiterBrief` from `rb_data`; passes it to `FinalReport`. `recruiter_brief` is `None` if LLM omits the field (backward-safe).
+  - Raised `max_tokens` from 4096 → 6000 to accommodate the extra output.
+- `frontend/src/components/ReportView.jsx`:
+  - Added `RecruiterBriefSection` component: indigo-bordered card with one-liner, strongest work (only if `repo_name` non-null), skills line, call questions (ask + listen_for), and profile consistency.
+  - In the root render: inserted `<RecruiterBriefSection brief={recruiterBrief} />` immediately after `CandidateHeader`.
+  - Inserted a "Full Technical Evidence Below" divider (only when `recruiterBrief` is present) between the brief and the existing sections.
+  - All existing sections (Overview, Skill Evidence, Project Claims, Activity Patterns, Interview Questions, Repo Table, Debug, Feedback) are unchanged below the divider.
+
 ### Session 17 — 2026-06-08
 
 **Feedback widget**
