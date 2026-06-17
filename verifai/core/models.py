@@ -138,16 +138,10 @@ class StrongestWork(BaseModel):
     summary: str
 
 
-class CallQuestion(BaseModel):
-    ask: str
-    listen_for: str
-
-
 class RecruiterBrief(BaseModel):
     one_liner: str
     strongest_work: StrongestWork
     confirmed_skills_line: str
-    call_questions: list[CallQuestion]
     profile_consistency: str
 
 

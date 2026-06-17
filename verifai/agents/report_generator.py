@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 from core.llm import MODEL, get_client
 from core.models import (
     ActivityPatterns,
-    CallQuestion,
     CandidateReport,
     FinalReport,
     ProjectInterviewQuestion,
@@ -71,13 +70,6 @@ Return JSON with exactly this structure:
 
     "confirmed_skills_line": "One sentence. Format: '[Confirmed skills] confirmed in code. [Unconfirmed skills] listed on resume but not found in public repos.' Example: 'Python, Streamlit, and Requests confirmed in code. Java, pandas, scikit-learn, and 7 others listed on resume but not found in public repos.' If no resume was provided, describe the languages observed in GitHub only.",
 
-    "call_questions": [
-      {
-        "ask": "The exact question to ask, phrased naturally for a phone call",
-        "listen_for": "What a confident specific answer sounds like vs what evasiveness sounds like. This is the KEY field — it must let a non-technical person evaluate the response without any technical knowledge. Focus on specificity, immediacy, and confidence vs hesitation and vagueness."
-      }
-    ],
-
     "profile_consistency": "One factual sentence comparing what languages/skills appear in GitHub activity vs what is claimed on resume. No verdict, no judgment word like 'inconsistent' or 'suspicious'. Just plain observation. Example: 'GitHub active in Python, HTML, JavaScript. Resume lists Java, Julia, scikit-learn — these appear on the resume only.' If no resume, note what the GitHub profile shows."
   },
 
@@ -107,7 +99,6 @@ Return JSON with exactly this structure:
 }
 
 recruiter_brief rules:
-- Generate 2-3 call_questions maximum, prioritizing the most significant unmatched claims or notable patterns
 - Every field must be grounded in actual data from this candidate — never generic boilerplate
 - This section is read by a NON-TECHNICAL recruiter in under 30 seconds — no jargon, no technical terms without explanation
 - Make every sentence sound specific to this candidate's actual numbers and findings
@@ -250,10 +241,6 @@ def generate_report(state: PipelineState) -> PipelineState:
                     summary=sw_data.get("summary", ""),
                 ),
                 confirmed_skills_line=rb_data.get("confirmed_skills_line", ""),
-                call_questions=[
-                    CallQuestion(**q)
-                    for q in rb_data.get("call_questions", [])
-                ],
                 profile_consistency=rb_data.get("profile_consistency", ""),
             )
 

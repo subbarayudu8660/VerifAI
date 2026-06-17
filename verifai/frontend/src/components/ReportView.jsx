@@ -200,29 +200,6 @@ function RecruiterBriefSection({ brief }) {
         </p>
       </div>
 
-      {brief.call_questions?.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
-            What to Ask on the Call
-          </div>
-          {brief.call_questions.map((q, i) => (
-            <div key={i} style={{
-              background: "#f9fafb",
-              borderRadius: 8,
-              padding: "12px 14px",
-              marginBottom: 8,
-            }}>
-              <p style={{ fontSize: 14, color: "#111", margin: "0 0 4px", fontWeight: 500 }}>
-                Ask: "{q.ask}"
-              </p>
-              <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
-                Listen for: {q.listen_for}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
           Profile Consistency
