@@ -11,6 +11,16 @@ Agent files import from this module — nothing hardcoded inline.
 # Repos created within this many days are flagged RECENT_CREATION
 RECENT_CREATION_DAYS = 20
 
+# Repos with fewer total bytes across all languages are flagged EMPTY_OR_MINIMAL_REPO
+MINIMAL_REPO_BYTES_THRESHOLD = 500
+
+# Max .ipynb files fetched and parsed per candidate (github_scraper notebook import scan)
+MAX_NOTEBOOK_SCANS = 5
+
+# Repo-name keywords that indicate ML/data-science relevance — used to prioritize
+# which notebook-containing repos get scanned first within the MAX_NOTEBOOK_SCANS budget
+ML_KEYWORDS = ["classifier", "prediction", "model", "analysis", "ml", "data", "neural", "regression"]
+
 # ---------------------------------------------------------------------------
 # Coherence verifier — skill matching
 # ---------------------------------------------------------------------------
@@ -107,6 +117,17 @@ STOPWORDS = {
 
 # Keyword overlap score (0–1) required to count a project claim as matched
 PROJECT_MATCH_THRESHOLD = 0.35
+
+# Python standard library modules — excluded from notebook_imports skill evidence
+# since importing them demonstrates no meaningful third-party skill
+STDLIB_MODULES = {
+    "os", "sys", "json", "re", "math", "datetime", "collections", "itertools",
+    "functools", "typing", "pathlib", "random", "time", "logging", "argparse",
+    "subprocess", "shutil", "copy", "io", "csv", "string", "threading",
+    "multiprocessing", "unittest", "abc", "enum", "dataclasses", "contextlib",
+    "warnings", "traceback", "glob", "pickle", "base64", "hashlib", "socket",
+    "http", "urllib", "email", "sqlite3", "queue", "operator", "uuid",
+}
 
 # ---------------------------------------------------------------------------
 # Coherence verifier — unmatched project classification

@@ -15,13 +15,38 @@ import sys
 import requests
 from datetime import datetime, timezone
 
-from core.constants import RECENT_CREATION_DAYS
+from core.constants import (
+    MAX_NOTEBOOK_SCANS,
+    ML_KEYWORDS,
+    MINIMAL_REPO_BYTES_THRESHOLD,
+    RECENT_CREATION_DAYS,
+)
 from core.flags import Flag, make_flag
 from core.github_client import GitHubClient
 from core.models import GitHubScrapeResult, RepoData
 from state import PipelineState
 
 _TODAY = datetime.now(timezone.utc)
+
+
+def extract_notebook_imports(notebook_content: str) -> set[str]:
+    """Parse a Jupyter notebook's JSON content and extract import statements from code cells."""
+    try:
+        nb = json.loads(notebook_content)
+        imports = set()
+        for cell in nb.get("cells", []):
+            if cell.get("cell_type") == "code":
+                source = "".join(cell.get("source", []))
+                for match in re.finditer(r'^\s*(?:import|from)\s+([a-zA-Z0-9_]+)', source, re.MULTILINE):
+                    imports.add(match.group(1))
+        return imports
+    except Exception:
+        return set()
+
+
+def is_ml_relevant_repo(repo_name: str) -> bool:
+    name_lower = repo_name.lower()
+    return any(kw in name_lower for kw in ML_KEYWORDS)
 
 
 def _parse_dt(s: str | None) -> datetime | None:
@@ -70,6 +95,14 @@ def _detect_flags(
             Flag.FORK_NO_CONTRIBUTION,
             "Repository is a fork with no additional commits by the owner.",
             f"is_fork=True, commits={len(commits)}",
+        ))
+
+    total_bytes = sum(languages.values())
+    if total_bytes < MINIMAL_REPO_BYTES_THRESHOLD:
+        flags.append(make_flag(
+            Flag.EMPTY_OR_MINIMAL_REPO,
+            "Repository contains minimal or placeholder code.",
+            f"total_bytes={total_bytes}",
         ))
 
     for lang in languages:
@@ -153,6 +186,7 @@ def _build_repo_data(
     languages_first_seen: dict[str, str],
     readme_text: str = "",
     dependencies: dict | None = None,
+    notebook_imports: list[str] | None = None,
 ) -> RepoData:
     created_at = _parse_dt(repo["created_at"])
     last_pushed = _parse_dt(repo.get("pushed_at") or repo["created_at"])
@@ -179,6 +213,7 @@ def _build_repo_data(
         flags=flags,
         readme_text=readme_text,
         dependencies=dependencies or {"python": [], "javascript": []},
+        notebook_imports=notebook_imports or [],
     )
 
 
@@ -237,6 +272,23 @@ def scrape_github(state: PipelineState) -> PipelineState:
         except Exception as exc:
             print(f"[scraper] WARNING: skipping {name}: {exc}", file=sys.stderr)
             continue
+
+    notebook_candidates = [r for r in repo_results if "Jupyter Notebook" in r.languages]
+    notebook_candidates.sort(key=lambda r: not is_ml_relevant_repo(r.repo_name))
+    notebook_scans = 0
+    for rd in notebook_candidates:
+        if notebook_scans >= MAX_NOTEBOOK_SCANS:
+            break
+        ipynb_paths = [p for p in client.get_repo_tree(username, rd.repo_name) if p.endswith(".ipynb")]
+        imports: set[str] = set()
+        for path in ipynb_paths:
+            if notebook_scans >= MAX_NOTEBOOK_SCANS:
+                break
+            content = client.get_file_contents(username, rd.repo_name, path)
+            if content:
+                imports |= extract_notebook_imports(content)
+                notebook_scans += 1
+        rd.notebook_imports = sorted(imports)
 
     account_created = _parse_dt(user.get("created_at"))
     total_flags = sum(len(r.flags) for r in repo_results)

@@ -10,6 +10,7 @@ class Flag(str, Enum):
     TIMELINE_GAP = "TIMELINE_GAP"
     CLAIM_NO_EVIDENCE = "CLAIM_NO_EVIDENCE"
     TEAM_CLAIM_SOLO_REPOS = "TEAM_CLAIM_SOLO_REPOS"
+    EMPTY_OR_MINIMAL_REPO = "EMPTY_OR_MINIMAL_REPO"
 
 
 def make_flag(flag_type: Flag, description: str, evidence: str) -> dict[str, str]:

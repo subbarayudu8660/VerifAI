@@ -18,6 +18,7 @@ from core.constants import (
     PROJECT_MATCH_THRESHOLD,
     SKILL_ALIASES,
     SKIP_SKILLS,
+    STDLIB_MODULES,
     STOPWORDS,
 )
 from core.llm import MODEL, get_client
@@ -77,6 +78,7 @@ def _skill_in_repo(skill_lower: str, repo: dict) -> bool:
 
     Priority order:
     1. Dependency files (requirements.txt / package.json / pyproject.toml) — most reliable
+    1b. Notebook imports (parsed from .ipynb files) — same confidence tier as dependency files
     2. GitHub language API — strong for language-level skills
     3. README, description, repo name — supporting text evidence
     4. Alias match — language alias + text confirmation (prevents over-counting)
@@ -89,6 +91,18 @@ def _skill_in_repo(skill_lower: str, repo: dict) -> bool:
             return True
         aliases = SKILL_ALIASES.get(skill_lower, [])
         if any(alias in dep or dep in alias for alias in aliases for dep in all_deps):
+            return True
+
+    # Priority 1b — notebook imports (stdlib modules filtered out — not meaningful skills)
+    notebook_imports = [
+        i.lower() for i in repo.get("notebook_imports", [])
+        if i.lower() not in STDLIB_MODULES
+    ]
+    if notebook_imports:
+        if any(skill_lower == imp or skill_lower in imp or imp in skill_lower for imp in notebook_imports):
+            return True
+        aliases = SKILL_ALIASES.get(skill_lower, [])
+        if any(alias in imp or imp in alias for alias in aliases for imp in notebook_imports):
             return True
 
     # Priority 2 — language API
@@ -322,6 +336,14 @@ SKILL CLAIMS: "supported" if language appears in any repo, else "unverifiable"
 
 AI CODE: If repo ai_likelihood >= 0.7, note in contradicting_evidence for project claims on that repo.
 
+COMPLEXITY VS CLAIM: For each matched project, consider whether the repository's codebase size
+(total_bytes) and commit history plausibly support the complexity described in the resume claim.
+Do not assign a quality score or judgment — only note factually if there's a significant mismatch
+between claimed complexity and observable codebase size/activity. Phrase any observation neutrally,
+e.g. "The claimed architecture would typically involve more extensive code than this repository
+contains — worth asking what isn't captured publicly." Add such observations to contradicting_evidence
+only when a mismatch exists. If the codebase plausibly supports the claim, say nothing about complexity.
+
 Return JSON:
 {
   "checks": [
@@ -355,12 +377,28 @@ def _build_llm_context(state: PipelineState) -> str:
     parts.append(f"Total public repos: {github.get('total_public_repos')}")
     parts.append(f"Languages first seen: {github.get('languages_first_seen')}")
     for repo in github.get("repos", []):
+        total_bytes = sum(repo.get("languages", {}).values())
         parts.append(
             f"\nRepo: {repo['repo_name']} | commits: {repo['total_commits']} "
             f"| languages: {list(repo['languages'].keys())} "
+            f"| total_bytes: {total_bytes} "
             f"| co-contributors: {repo['co_contributor_count']} "
             f"| fork: {repo['is_fork']}"
         )
+
+    projects = state.get("project_matches") or []
+    if projects:
+        repo_index = {r["repo_name"]: r for r in github.get("repos", [])}
+        parts.append("\n=== PROJECT MATCHES (for complexity-vs-claim reasoning) ===")
+        for p in projects:
+            if p["matched_repo"]:
+                r = repo_index.get(p["matched_repo"], {})
+                total_bytes = sum(r.get("languages", {}).values())
+                parts.append(
+                    f"  '{p['claimed_project']}' → {p['matched_repo']} "
+                    f"(commits={r.get('total_commits')}, total_bytes={total_bytes}, "
+                    f"languages={list(r.get('languages', {}).keys())})"
+                )
 
     ai = state.get("ai_detection") or {}
     if ai:

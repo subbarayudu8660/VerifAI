@@ -30,6 +30,7 @@ class RepoData(BaseModel):
     flags: list[dict[str, str]]
     readme_text: str = ""                   # first 2000 chars, used by Agent 4 for skill matching
     dependencies: dict = {}                 # {"python": [...], "javascript": [...]} from dep files
+    notebook_imports: list[str] = []        # import statements parsed from .ipynb files
 
 
 class GitHubScrapeResult(BaseModel):

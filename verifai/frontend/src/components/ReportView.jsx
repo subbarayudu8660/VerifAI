@@ -12,12 +12,14 @@ const FLAG_COLORS = {
   RECENT_CREATION: "#f97316",
   NO_COMMIT_HISTORY: "#ef4444",
   FORK_NO_CONTRIBUTION: "#f59e0b",
+  EMPTY_OR_MINIMAL_REPO: "#9ca3af",
 };
 
 const FLAG_LABELS = {
   RECENT_CREATION: "Recently created",
   NO_COMMIT_HISTORY: "No commit history",
   FORK_NO_CONTRIBUTION: "Fork",
+  EMPTY_OR_MINIMAL_REPO: "Minimal/empty",
 };
 
 const INLINE_FLAGS = Object.keys(FLAG_COLORS);
@@ -366,11 +368,8 @@ function ProjectMatches({ matches }) {
                 </>
               ) : (
                 <span style={{ color: fd.color, marginLeft: 6 }}>
-                  → {fd.note}
+                  → {m.note || fd.note}
                 </span>
-              )}
-              {m.note && !matched && (
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>{m.note}</div>
               )}
             </div>
           </div>
@@ -401,6 +400,7 @@ function RepoTable({ repos, username, reposCapped, totalReposFound }) {
             <th style={th}>Repository</th>
             <th style={th}>Commits</th>
             <th style={th}>Languages</th>
+            <th style={th}>README</th>
             <th style={th}>Flags</th>
           </tr>
         </thead>
@@ -425,6 +425,9 @@ function RepoTable({ repos, username, reposCapped, totalReposFound }) {
                 </td>
                 <td style={td}>
                   {Object.keys(repo.languages).slice(0, 3).join(", ") || "—"}
+                </td>
+                <td style={{ ...td, color: repo.has_readme ? "#16a34a" : "#d1d5db", textAlign: "center" }}>
+                  {repo.has_readme ? "✓" : "✗"}
                 </td>
                 <td style={td}>
                   {repoFlags.map((f) => (
@@ -754,6 +757,16 @@ export default function ReportView({ state, onReset }) {
       <InterviewQuestions recruiter={recruiter} hasResume={hasResume} />
       <RepoTable repos={github_data?.repos} username={state.github_username} reposCapped={github_data?.repos_capped} totalReposFound={github_data?.total_repos_found} />
       <DebugInfo errors={errors} hidden={generatingPDF} />
+      <div style={{
+        maxWidth: 680, margin: "24px auto", padding: "16px 20px",
+        background: "#fffbeb", border: "1px solid #fde68a",
+        borderRadius: 8, fontSize: 13, color: "#92400e", lineHeight: 1.6,
+      }}>
+        This report covers public GitHub activity only. Many legitimate candidates do meaningful
+        work in private repositories, coursework environments, or local machines. Thin public
+        activity is not evidence of fabrication — it's one signal among many to discuss with the
+        candidate.
+      </div>
       <FeedbackWidget githubUsername={state.github_username} runId={state.run_id || state.id} hidden={generatingPDF} />
     </div>
   );

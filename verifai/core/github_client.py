@@ -110,6 +110,21 @@ class GitHubClient:
             pass
         return ""
 
+    def get_repo_tree(self, owner: str, repo: str) -> list[str]:
+        """Returns recursive file paths in the repo's default branch, or [] on failure."""
+        try:
+            repo_data = self.get(f"{_GITHUB_API}/repos/{owner}/{repo}")
+            default_branch = repo_data.get("default_branch", "main") if isinstance(repo_data, dict) else "main"
+            tree = self.get(
+                f"{_GITHUB_API}/repos/{owner}/{repo}/git/trees/{default_branch}",
+                {"recursive": "1"},
+            )
+            if isinstance(tree, dict):
+                return [item["path"] for item in tree.get("tree", []) if item.get("type") == "blob"]
+        except Exception:
+            pass
+        return []
+
     def get_file_contents(self, owner: str, repo: str, path: str) -> str | None:
         """Returns decoded text of a file in the repo, or None if absent or unreadable."""
         import base64

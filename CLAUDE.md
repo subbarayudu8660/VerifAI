@@ -309,6 +309,33 @@ Allowed origins:
 
 ## Session Log
 
+### Session 19 — 2026-06-19
+
+**Notebook import scanning — fixes false negatives where skill evidence lived only inside `.ipynb` files**
+- `core/github_client.py`: added `get_repo_tree(owner, repo)` — fetches the default branch's recursive git tree, returns blob paths (or `[]` on failure). Used to locate `.ipynb` files without guessing paths.
+- `agents/github_scraper.py`: added `extract_notebook_imports(notebook_content)` (parses notebook JSON, regex-extracts top-level `import`/`from` module names from code cells) and `is_ml_relevant_repo(repo_name)` (keyword match against `ML_KEYWORDS`).
+- After the main per-repo loop in `scrape_github`, a second pass collects repos whose `languages` include `"Jupyter Notebook"`, sorts ML-relevant repos first, then fetches+parses notebooks via `get_repo_tree` + `get_file_contents` up to `MAX_NOTEBOOK_SCANS` (5) total across the whole candidate — not per repo. Result stored as `notebook_imports: list[str]` on `RepoData`.
+- `core/constants.py`: added `MAX_NOTEBOOK_SCANS`, `ML_KEYWORDS`, `MINIMAL_REPO_BYTES_THRESHOLD`, `STDLIB_MODULES` (filters out `os`, `sys`, `json`, etc. so stdlib imports never count as skill evidence).
+- `agents/coherence_verifier.py`: `_skill_in_repo` now checks `notebook_imports` (stdlib-filtered) as **Priority 1b** — same confidence tier as dependency files, checked before the language-API/README/alias fallbacks.
+
+**EMPTY_OR_MINIMAL_REPO flag**
+- `core/flags.py`: added `EMPTY_OR_MINIMAL_REPO`.
+- `agents/github_scraper.py` (`_detect_flags`): repos with `sum(languages.values()) < MINIMAL_REPO_BYTES_THRESHOLD` (500 bytes) get flagged — catches placeholder/empty repos that otherwise looked like real activity.
+- `ReportView.jsx`: added to `FLAG_COLORS`/`FLAG_LABELS` so it renders in the Repo Reference table alongside `NO_COMMIT_HISTORY`/`FORK_NO_CONTRIBUTION`.
+
+**Complexity-vs-claim reasoning (Agent 4)**
+- `agents/coherence_verifier.py`: `_build_llm_context` now includes `total_bytes` per repo and a new `PROJECT MATCHES (for complexity-vs-claim reasoning)` block (claimed project → matched repo with commits/total_bytes/languages) — all from data already fetched, zero new API calls.
+- `_SYSTEM` prompt gained a `COMPLEXITY VS CLAIM` rule: note a neutral, factual mismatch (e.g. claimed architecture vs. observable repo size) in `contradicting_evidence` only when a real mismatch exists; say nothing when the codebase plausibly supports the claim. No new score/field — surfaces through the existing `checks[].contradicting_evidence`.
+
+**Frontend fixes**
+- `ReportView.jsx` `RepoTable`: added a README column (`has_readme` ✓/✗) — data was already in `github_data.repos[]`, no backend change needed.
+- `ReportView.jsx` `ProjectMatches`: fixed a duplicate-render bug — `CLAIM_NO_EVIDENCE` was printing "No matching repo found" twice (once from `fd.note`, once from a separate `m.note` div with near-identical text). Collapsed to a single `→ {m.note || fd.note}` span.
+- Added a permanent limitations disclaimer (amber box) above the feedback widget on every report: public-GitHub-only scope, thin activity ≠ fabrication.
+- Confirmed `DebugInfo` is already excluded from PDF capture via the existing `hidden={generatingPDF}` prop (no further change needed).
+- Recruiter Brief / two-layer report structure (Quick Brief top layer + "Full Technical Evidence Below" divider) was already implemented in Session 18 — no changes needed this session.
+
+**Not run:** these changes were not exercised against a live pipeline run this session (per instruction). Worth a smoke test on a candidate with notebook-only repos before relying on `notebook_imports` in production.
+
 ### Session 1 — 2026-05-30
 Full scaffold: 5-agent pipeline, FastAPI, LangGraph, React frontend, Railway + Vercel deployment.
 
