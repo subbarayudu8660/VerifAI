@@ -1,60 +1,73 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
-const INDIGO = "#6366f1";
-const INDIGO_DARK = "#4f46e5";
-const NAVY = "#0f1117";
+const PRIMARY = "#0f172a";
+const BORDER = "#e2e8f0";
+const BG = "#f8fafc";
+const GREEN = "#16a34a";
+const FONT = "system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif";
 
 // ---------------------------------------------------------------------------
-// Shared primitives
+// Shared
 // ---------------------------------------------------------------------------
 
-function Section({ children, style }) {
-  return (
-    <section style={{ padding: "80px 24px", ...style }}>
-      <div style={{ maxWidth: 900, margin: "0 auto" }}>{children}</div>
-    </section>
-  );
-}
-
-function Label({ children }) {
-  return (
-    <div style={{
-      display: "inline-block",
-      fontSize: 11,
-      fontWeight: 700,
-      letterSpacing: "0.12em",
-      textTransform: "uppercase",
-      color: INDIGO,
-      marginBottom: 16,
-    }}>
-      {children}
-    </div>
-  );
-}
-
-function PrimaryButton({ children, onClick }) {
-  const [hover, setHover] = React.useState(false);
+function BlackButton({ children, onClick, style }) {
   return (
     <button
       onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       style={{
-        background: hover ? INDIGO_DARK : INDIGO,
+        background: PRIMARY,
         color: "#fff",
         border: "none",
-        borderRadius: 8,
-        padding: "14px 28px",
-        fontSize: 15,
+        borderRadius: 6,
+        padding: "12px 22px",
+        fontSize: 14,
         fontWeight: 600,
         cursor: "pointer",
-        transition: "background 0.15s",
         letterSpacing: "-0.01em",
+        ...style,
       }}
     >
       {children}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Navbar
+// ---------------------------------------------------------------------------
+
+function Navbar({ onTry }) {
+  return (
+    <nav style={{
+      background: "#fff",
+      borderBottom: `1px solid ${BORDER}`,
+      padding: "0 24px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      height: 56,
+      position: "sticky",
+      top: 0,
+      zIndex: 100,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+        <a href="/" style={{ fontSize: 17, fontWeight: 800, color: PRIMARY, textDecoration: "none", letterSpacing: "-0.03em" }}>
+          VerifAI
+        </a>
+        <div style={{ display: "flex", gap: 24 }}>
+          {[["How it works", "#how-it-works"], ["The report", "#the-report"], ["Pricing", "#pricing"]].map(([label, href]) => (
+            <a key={href} href={href} style={{ fontSize: 14, color: "#64748b", textDecoration: "none" }}>
+              {label}
+            </a>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <a href="/login" style={{ fontSize: 14, color: "#374151", textDecoration: "none" }}>Sign in</a>
+        <BlackButton onClick={onTry} style={{ padding: "8px 16px" }}>Try it free →</BlackButton>
+      </div>
+    </nav>
   );
 }
 
@@ -64,66 +77,60 @@ function PrimaryButton({ children, onClick }) {
 
 function Hero({ onTry }) {
   return (
-    <section style={{
-      background: NAVY,
-      padding: "100px 24px 90px",
-      textAlign: "center",
-    }}>
-      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+    <section style={{ background: "#fff", padding: "80px 24px 72px", borderBottom: `1px solid ${BORDER}` }}>
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
         <div style={{
           display: "inline-block",
-          background: "rgba(99,102,241,0.15)",
-          border: "1px solid rgba(99,102,241,0.3)",
+          background: "#f1f5f9",
+          border: `1px solid ${BORDER}`,
           borderRadius: 20,
-          padding: "5px 14px",
-          fontSize: 12,
+          padding: "4px 14px",
+          fontSize: 11,
           fontWeight: 600,
-          color: "#a5b4fc",
+          color: "#475569",
           letterSpacing: "0.06em",
           textTransform: "uppercase",
-          marginBottom: 28,
+          marginBottom: 32,
         }}>
-          Technical hiring intelligence
+          Now in private beta for technical recruiters
         </div>
 
         <h1 style={{
-          fontSize: "clamp(36px, 6vw, 58px)",
+          fontSize: "clamp(40px, 6vw, 68px)",
           fontWeight: 800,
-          color: "#fff",
-          lineHeight: 1.1,
-          letterSpacing: "-0.03em",
-          margin: "0 0 24px",
+          color: PRIMARY,
+          lineHeight: 1.05,
+          letterSpacing: "-0.04em",
+          margin: "0 0 28px",
+          maxWidth: 720,
         }}>
-          Stop hiring resumes.<br />
-          Start hiring builders.
+          The reference check<br />
+          for people who've<br />
+          never had a job.
         </h1>
 
         <p style={{
-          fontSize: "clamp(16px, 2vw, 19px)",
-          color: "#9ca3af",
-          lineHeight: 1.65,
-          maxWidth: 580,
-          margin: "0 auto 40px",
+          fontSize: "clamp(15px, 2vw, 17px)",
+          color: "#475569",
+          lineHeight: 1.7,
+          maxWidth: 520,
+          margin: "0 0 36px",
         }}>
-          Built for hiring junior engineers, new grads, and interns. VerifAI
-          analyzes a candidate's public GitHub activity, verifies their resume
-          claims against real evidence, and generates a structured intelligence
-          report — so you know exactly what to probe before the interview.
+          VerifAI cross-references a candidate's GitHub activity against their resume
+          claims — giving recruiters a structured intelligence report in under two minutes.
         </p>
 
-        <PrimaryButton onClick={onTry}>Try it free →</PrimaryButton>
+        <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", marginBottom: 14 }}>
+          <BlackButton onClick={onTry} style={{ padding: "13px 24px", fontSize: 15 }}>
+            Try it free →
+          </BlackButton>
+          <a href="#the-report" style={{ fontSize: 15, color: "#374151", textDecoration: "none" }}>
+            See a sample report
+          </a>
+        </div>
 
-        <p style={{
-          fontSize: 13,
-          color: "#6b7280",
-          marginTop: 16,
-          lineHeight: 1.6,
-          maxWidth: 500,
-          margin: "16px auto 0",
-        }}>
-          Designed specifically for junior engineers, new grads, and interns —
-          where GitHub is the primary signal and there's no prior work history
-          to fall back on.
+        <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>
+          Five free verifications. No credit card required.
         </p>
       </div>
     </section>
@@ -136,294 +143,40 @@ function Hero({ onTry }) {
 
 function Problem() {
   return (
-    <Section style={{ background: "#fff", borderBottom: "1px solid #f3f4f6" }}>
-      <Label>The problem</Label>
-      <h2 style={{
-        fontSize: "clamp(26px, 4vw, 38px)",
-        fontWeight: 800,
-        color: "#111827",
-        letterSpacing: "-0.025em",
-        lineHeight: 1.2,
-        margin: "0 0 20px",
-        maxWidth: 520,
-      }}>
-        The hiring process is broken.
-      </h2>
-      <p style={{
-        fontSize: 17,
-        color: "#6b7280",
-        lineHeight: 1.75,
-        maxWidth: 640,
-        margin: 0,
-      }}>
-        Every year, companies make critical hiring decisions based on claims they cannot verify.
-        AI-generated resumes pass every ATS filter. Polished GitHub portfolios are built overnight.
-        The result: bad hires, wasted interviews, and talented people passed over because they
-        can't compete with fabricated credentials.
-      </p>
-    </Section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// How it works
-// ---------------------------------------------------------------------------
-
-const STEPS = [
-  {
-    n: "01",
-    title: "Enter a GitHub username",
-    body: "Paste any GitHub handle and optionally upload a PDF resume. That's all the input needed.",
-  },
-  {
-    n: "02",
-    title: "VerifAI researches the candidate",
-    body: "Five agents run in sequence: resume parsing, GitHub scraping, AI code detection, claim verification, and report synthesis.",
-  },
-  {
-    n: "03",
-    title: "Get an intelligence report",
-    body: "Get a structured intelligence report — skill evidence, project verification, activity patterns, and targeted interview questions based on what was actually found.",
-  },
-];
-
-function HowItWorks() {
-  return (
-    <Section style={{ background: "#f9fafb", borderBottom: "1px solid #f3f4f6" }}>
-      <Label>How it works</Label>
-      <h2 style={{
-        fontSize: "clamp(26px, 4vw, 38px)",
-        fontWeight: 800,
-        color: "#111827",
-        letterSpacing: "-0.025em",
-        lineHeight: 1.2,
-        margin: "0 0 48px",
-      }}>
-        Three steps. Minutes, not days.
-      </h2>
-
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-        gap: 24,
-      }}>
-        {STEPS.map((s) => (
-          <div key={s.n} style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: "28px 24px",
+    <section id="how-it-works" style={{ padding: "72px 24px", background: "#fff", borderBottom: `1px solid ${BORDER}` }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "180px 1fr", gap: 64, alignItems: "start" }}>
+        <div>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "#9ca3af",
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
           }}>
-            <div style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: INDIGO,
-              letterSpacing: "0.06em",
-              marginBottom: 12,
-            }}>
-              {s.n}
-            </div>
-            <div style={{
-              fontSize: 16,
-              fontWeight: 700,
-              color: "#111827",
-              marginBottom: 10,
-              letterSpacing: "-0.01em",
-            }}>
-              {s.title}
-            </div>
-            <div style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.65 }}>
-              {s.body}
-            </div>
+            The Problem
           </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// What you get — report mockup
-// ---------------------------------------------------------------------------
-
-function MockFlag({ text, question }) {
-  return (
-    <div style={{
-      borderLeft: "3px solid #f59e0b",
-      paddingLeft: 14,
-      marginBottom: 16,
-    }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", marginBottom: 4 }}>
-        ⚠ {text}
-      </div>
-      <div style={{
-        fontSize: 12,
-        color: "#92400e",
-        fontStyle: "italic",
-        background: "#fffbeb",
-        borderRadius: 5,
-        padding: "4px 10px",
-        display: "inline-block",
-      }}>
-        Ask: "{question}"
-      </div>
-    </div>
-  );
-}
-
-function MockPill({ label, supported }) {
-  return (
-    <span style={{
-      display: "inline-block",
-      background: supported ? "#f0fdf4" : "#f3f4f6",
-      color: supported ? "#15803d" : "#6b7280",
-      borderRadius: 20,
-      padding: "3px 11px",
-      fontSize: 12,
-      fontWeight: 500,
-      margin: "3px 4px 3px 0",
-    }}>
-      {label}
-    </span>
-  );
-}
-
-function ReportMockup() {
-  return (
-    <div style={{
-      background: "#fff",
-      border: "1px solid #e5e7eb",
-      borderRadius: 12,
-      overflow: "hidden",
-      fontSize: 13,
-      boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
-    }}>
-      {/* Header bar */}
-      <div style={{
-        background: "#f9fafb",
-        borderBottom: "1px solid #e5e7eb",
-        padding: "12px 20px",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-      }}>
-        {["#ef4444", "#f59e0b", "#22c55e"].map((c) => (
-          <div key={c} style={{ width: 10, height: 10, borderRadius: "50%", background: c }} />
-        ))}
-        <div style={{ marginLeft: 8, fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>
-          Candidate Intelligence Report — github_handle
-        </div>
-      </div>
-
-      <div style={{ padding: "20px 24px" }}>
-        {/* Timeline flags */}
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#9ca3af", marginBottom: 10 }}>
-          Timeline Flags
-        </div>
-        <MockFlag
-          text='Claims "5 years of Python" → First Python commit: Jan 2023'
-          question="Walk me through your Python work before 2023 — was this in private repos?"
-        />
-        <MockFlag
-          text="3 repos created within 14 days of application date"
-          question="Tell me about these recently created projects — what was the motivation?"
-        />
-
-        <div style={{ borderTop: "1px solid #f3f4f6", margin: "18px 0" }} />
-
-        {/* Skill evidence */}
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#9ca3af", marginBottom: 8 }}>
-          Skill Evidence
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
-          Supported
-        </div>
-        <div style={{ marginBottom: 10 }}>
-          {["Python", "FastAPI", "Docker", "PyTorch", "SQL"].map((s) => (
-            <MockPill key={s} label={s} supported />
-          ))}
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
-          No public evidence
         </div>
         <div>
-          {["React", "Node.js", "MongoDB", "Kubernetes"].map((s) => (
-            <MockPill key={s} label={s} />
-          ))}
-        </div>
-
-        <div style={{ borderTop: "1px solid #f3f4f6", margin: "18px 0" }} />
-
-        {/* Activity patterns */}
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#9ca3af", marginBottom: 10 }}>
-          Activity Patterns
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[
-            ["Account age", "GitHub since 2022"],
-            ["Most active in", "Python, Jupyter Notebook"],
-            ["Repo velocity", "3 repos in last 20 days"],
-            ["Commit pattern", "Active Jan–Mar, sparse since"],
-          ].map(([label, value]) => (
-            <div key={label} style={{ background: "#f9fafb", borderRadius: 6, padding: "8px 12px" }}>
-              <div style={{ fontSize: 9, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>
-                {label}
-              </div>
-              <div style={{ fontSize: 12, color: "#111827", fontWeight: 500 }}>{value}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WhatYouGet() {
-  return (
-    <Section style={{ background: "#fff", borderBottom: "1px solid #f3f4f6" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
-        <div>
-          <Label>What you get</Label>
           <h2 style={{
-            fontSize: "clamp(26px, 4vw, 36px)",
+            fontSize: "clamp(22px, 3.5vw, 36px)",
             fontWeight: 800,
-            color: "#111827",
-            letterSpacing: "-0.025em",
-            lineHeight: 1.2,
+            color: PRIMARY,
+            letterSpacing: "-0.03em",
+            lineHeight: 1.15,
             margin: "0 0 20px",
           }}>
-            A structured report, not a verdict.
+            Every junior resume looks the same. Same school tier. Same GPA range.
+            Same three tutorial projects.
           </h2>
-          <p style={{ fontSize: 15, color: "#6b7280", lineHeight: 1.75, margin: "0 0 24px" }}>
-            VerifAI surfaces evidence and suggests questions — it never tells you
-            to hire or pass. That decision stays with you.
+          <p style={{ fontSize: 16, color: "#64748b", lineHeight: 1.8, margin: 0 }}>
+            Companies make critical hiring decisions based on claims they can't verify. AI-generated
+            resumes pass every ATS filter. Polished GitHub portfolios get built overnight. The result:
+            bad hires, wasted interviews, and talented people passed over because they can't compete
+            with fabricated credentials.
           </p>
-          <ul style={{ padding: 0, margin: 0, listStyle: "none" }}>
-            {[
-              "Timeline flags with specific interview questions",
-              "Skill evidence — supported vs no public evidence",
-              "Activity patterns and repo history",
-              "Project claims matched to real repos",
-            ].map((item) => (
-              <li key={item} style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                fontSize: 14,
-                color: "#374151",
-                marginBottom: 10,
-              }}>
-                <span style={{ color: INDIGO, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>→</span>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <ReportMockup />
         </div>
       </div>
-    </Section>
+    </section>
   );
 }
 
@@ -431,94 +184,207 @@ function WhatYouGet() {
 // Who it's for
 // ---------------------------------------------------------------------------
 
-const AUDIENCES = [
-  {
-    title: "Recruiting agencies",
-    body: "Screen more candidates in less time. Surface the ones worth a technical interview.",
-  },
-  {
-    title: "Startups",
-    body: "Early hires matter most. Verify before you commit to a process.",
-  },
-  {
-    title: "Technical hiring managers",
-    body: "Go into every interview with specific, evidence-based questions already prepared.",
-  },
-];
-
 function WhoItsFor() {
   return (
-    <Section style={{ background: "#f9fafb", borderBottom: "1px solid #f3f4f6" }}>
-      <Label>Who it's for</Label>
-      <h2 style={{
-        fontSize: "clamp(26px, 4vw, 36px)",
-        fontWeight: 800,
-        color: "#111827",
-        letterSpacing: "-0.025em",
-        lineHeight: 1.2,
-        margin: "0 0 40px",
-      }}>
-        Built for everyone who makes technical hiring decisions.
-      </h2>
-
+    <section style={{ padding: "72px 24px", background: BG, borderBottom: `1px solid ${BORDER}` }}>
       <div style={{
+        maxWidth: 900,
+        margin: "0 auto",
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        gap: 20,
+        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+        gap: 56,
+        alignItems: "start",
       }}>
-        {AUDIENCES.map((a) => (
-          <div key={a.title} style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: "24px 22px",
-          }}>
-            <div style={{
-              fontSize: 15,
-              fontWeight: 700,
-              color: "#111827",
-              marginBottom: 8,
-              letterSpacing: "-0.01em",
+        <h2 style={{
+          fontSize: "clamp(22px, 3.5vw, 34px)",
+          fontWeight: 800,
+          color: PRIMARY,
+          letterSpacing: "-0.03em",
+          lineHeight: 1.2,
+          margin: 0,
+        }}>
+          Built for hiring junior engineers, new grads, and interns.
+        </h2>
+        <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 8, overflow: "hidden" }}>
+          {["Hiring junior engineers", "New-grad recruiting", "Internship pipelines"].map((item, i, arr) => (
+            <div key={item} style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "16px 20px",
+              borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
             }}>
-              {a.title}
+              <span style={{ color: GREEN, fontSize: 14, fontWeight: 700, flexShrink: 0 }}>✓</span>
+              <span style={{ fontSize: 15, color: "#374151", fontWeight: 500 }}>{item}</span>
             </div>
-            <div style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.65 }}>
-              {a.body}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </Section>
+    </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// CTA
+// The Report — Quick Brief preview card
 // ---------------------------------------------------------------------------
 
-function CTA({ onTry }) {
+function QuickBriefPreview() {
+  const confirmedSkills = ["Python", "FastAPI", "Docker", "PostgreSQL"];
+  const unconfirmedSkills = ["React", "Kubernetes"];
+
   return (
-    <Section style={{ background: NAVY, textAlign: "center" }}>
-      <h2 style={{
-        fontSize: "clamp(28px, 4vw, 42px)",
-        fontWeight: 800,
-        color: "#fff",
-        letterSpacing: "-0.025em",
-        lineHeight: 1.15,
-        margin: "0 0 20px",
-      }}>
-        Ready to hire builders,<br />not resumes?
-      </h2>
-      <p style={{
-        fontSize: 17,
-        color: "#9ca3af",
-        marginBottom: 36,
-        lineHeight: 1.6,
-      }}>
-        No account required. Paste a GitHub username and go.
+    <div style={{
+      background: "#fff",
+      border: `1px solid ${BORDER}`,
+      borderLeft: "3px solid #475569",
+      borderRadius: 8,
+      padding: "24px 28px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+          Quick Brief
+        </span>
+        <span style={{ fontSize: 12, color: "#9ca3af" }}>@alex_chen · 4m ago</span>
+      </div>
+
+      <p style={{ fontSize: 16, fontWeight: 700, color: PRIMARY, margin: "0 0 22px", lineHeight: 1.4 }}>
+        Python backend developer with evidence of production-grade work. GitHub history
+        is consistent with the claims made on the resume.
       </p>
-      <PrimaryButton onClick={onTry}>Start verifying candidates →</PrimaryButton>
-    </Section>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 18 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+            Strongest Work
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: PRIMARY, fontWeight: 600, marginBottom: 4 }}>
+            api-gateway
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+            FastAPI service, 340 commits, active since Jan 2023
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+            Skills
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {confirmedSkills.map((s) => (
+              <span key={s} style={{ border: `1px solid ${GREEN}`, color: GREEN, borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 500 }}>
+                {s}
+              </span>
+            ))}
+            {unconfirmedSkills.map((s) => (
+              <span key={s} style={{ border: "1px solid #d1d5db", color: "#9ca3af", borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 500 }}>
+                {s}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+            Profile Consistency
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.65 }}>
+            <div>• 3 years of consistent commit history</div>
+            <div>• Timeline aligns with claimed experience</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 12, display: "flex", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          Full Technical Evidence Below
+        </span>
+        <span style={{ fontSize: 11, color: "#9ca3af" }}>24 repos · 1,847 commits</span>
+      </div>
+    </div>
+  );
+}
+
+function TheReport({ onTry }) {
+  return (
+    <section id="the-report" style={{ padding: "72px 24px", background: "#fff", borderBottom: `1px solid ${BORDER}` }}>
+      <div style={{
+        maxWidth: 900,
+        margin: "0 auto",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: 56,
+        alignItems: "start",
+      }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 16 }}>
+            The Report
+          </div>
+          <h2 style={{
+            fontSize: "clamp(22px, 3vw, 30px)",
+            fontWeight: 800,
+            color: PRIMARY,
+            letterSpacing: "-0.03em",
+            lineHeight: 1.2,
+            margin: "0 0 16px",
+          }}>
+            A Quick Brief built for the first 60 seconds of a resume review.
+          </h2>
+          <p style={{ fontSize: 14, color: "#64748b", lineHeight: 1.75, marginBottom: 24 }}>
+            Every report opens with a plain-language brief: one-liner, strongest work,
+            confirmed skills, and a neutral consistency read. No verdict — just evidence.
+          </p>
+          <BlackButton onClick={onTry}>Try it free →</BlackButton>
+        </div>
+        <QuickBriefPreview />
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pricing
+// ---------------------------------------------------------------------------
+
+function Pricing({ onTry }) {
+  return (
+    <section id="pricing" style={{ padding: "80px 24px", background: BG, borderBottom: `1px solid ${BORDER}`, textAlign: "center" }}>
+      <div style={{ maxWidth: 580, margin: "0 auto" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 20 }}>
+          Pricing
+        </div>
+        <h2 style={{
+          fontSize: "clamp(24px, 3.5vw, 36px)",
+          fontWeight: 800,
+          color: PRIMARY,
+          letterSpacing: "-0.03em",
+          lineHeight: 1.2,
+          margin: "0 0 16px",
+        }}>
+          Five free verifications.<br />Then contact us for access.
+        </h2>
+        <p style={{ fontSize: 15, color: "#64748b", lineHeight: 1.75, marginBottom: 32 }}>
+          We're onboarding teams one at a time during the private beta. Pricing scales
+          with seats and volume — no surprise per-call fees.
+        </p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+          <BlackButton onClick={onTry} style={{ padding: "13px 24px", fontSize: 15 }}>
+            Start verifying →
+          </BlackButton>
+          <a
+            href="mailto:team@verifai.dev"
+            style={{
+              padding: "12px 18px",
+              border: `1px solid ${BORDER}`,
+              borderRadius: 6,
+              fontSize: 14,
+              color: "#374151",
+              textDecoration: "none",
+              fontWeight: 500,
+            }}
+          >
+            team@verifai.dev
+          </a>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -528,15 +394,16 @@ function CTA({ onTry }) {
 
 function Footer() {
   return (
-    <footer style={{
-      background: NAVY,
-      borderTop: "1px solid rgba(255,255,255,0.06)",
-      padding: "24px",
-      textAlign: "center",
-    }}>
-      <span style={{ fontSize: 13, color: "#4b5563" }}>
-        VerifAI · Built for technical hiring
-      </span>
+    <footer style={{ background: "#fff", borderTop: `1px solid ${BORDER}`, padding: "20px 24px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: PRIMARY, letterSpacing: "-0.03em" }}>VerifAI</span>
+        <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+          <span style={{ fontSize: 13, color: "#9ca3af" }}>© 2026</span>
+          <a href="#" style={{ fontSize: 13, color: "#9ca3af", textDecoration: "none" }}>Privacy</a>
+          <a href="mailto:team@verifai.dev" style={{ fontSize: 13, color: "#9ca3af", textDecoration: "none" }}>team@verifai.dev</a>
+          <a href="https://github.com/subbarayudu8660/VerifAI" target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#9ca3af", textDecoration: "none" }}>GitHub</a>
+        </div>
+      </div>
     </footer>
   );
 }
@@ -550,13 +417,13 @@ export default function LandingPage() {
   const goToVerify = () => navigate("/verify");
 
   return (
-    <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", margin: 0 }}>
+    <div style={{ fontFamily: FONT, margin: 0, background: "#fff" }}>
+      <Navbar onTry={goToVerify} />
       <Hero onTry={goToVerify} />
       <Problem />
-      <HowItWorks />
-      <WhatYouGet />
       <WhoItsFor />
-      <CTA onTry={goToVerify} />
+      <TheReport onTry={goToVerify} />
+      <Pricing onTry={goToVerify} />
       <Footer />
     </div>
   );

@@ -309,6 +309,58 @@ Allowed origins:
 
 ## Session Log
 
+### Session 20 — 2026-07-01
+
+**Full Lovable-style redesign — visual only, no logic changes**
+
+Design tokens applied globally (zero purple/indigo remaining):
+- Primary: `#0f172a` (near-black slate), replaces all `#4f46e5`/`#6366f1` occurrences
+- Background: `#f8fafc`, card border: `#e2e8f0`, green: `#16a34a`, amber: `#d97706`
+- Font: `system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif`
+- No shadows, no gradients — 1px borders only
+
+**`LandingPage.jsx`** — complete rewrite:
+- Sticky navbar: VerifAI logo left, nav links (How it works / The report / Pricing as anchor IDs), Sign in + filled-black "Try it free →" right
+- Hero: badge pill "Now in private beta for technical recruiters", large left-aligned editorial headline "The reference check / for people who've / never had a job.", subheadline, dual CTAs, "Five free verifications. No credit card required." note
+- Problem section: two-column layout — "THE PROBLEM" label left, bold statement + paragraph right; `id="how-it-works"` anchor
+- Who it's for: two-column — headline left, bordered checklist card right with green checkmarks
+- The Report: two-column — headline left, live-styled `QuickBriefPreview` mock card right (slate-blue left border, 3-column grid, outlined skill chips); `id="the-report"` anchor
+- Pricing: centered, "PRICING" label, large headline, two CTAs; `id="pricing"` anchor
+- Footer: minimal, logo + © 2026 + links
+
+**`VerifyPage.jsx`**:
+- Navbar: shared pattern (logo left, email + sign out right, 1px border)
+- Page header: "Verify a candidate" h1 + subtitle
+- Past verifications panel: "PAST VERIFICATIONS" / "Last 30 days" header, bordered card rows with GitHub icon + @username + optional `v.one_liner` (blank if not in API response) + date + chevron
+
+**`UploadForm.jsx`**:
+- Card: white, 1px border, no shadow
+- Two-column grid layout: GITHUB USERNAME (with GitHub SVG icon in input) + RESUME PDF drop zone
+- Bottom row: RemainingBadge left, "Run verification →" filled black button right
+- Sign-in prompt restyled (no indigo)
+
+**`ReportView.jsx`**:
+- `ReportTopBar`: "← Back to verifications" (gray text button), large `@username` h1, subtitle (repos/commits), outline buttons for Download PDF + Share Report — no card wrapper, just borderBottom divider
+- `RecruiterBriefSection`: `borderLeft: "3px solid #475569"` (muted slate, NOT purple), "QUICK BRIEF" label, one-liner, 3-column grid (Strongest Work / Skills / Profile Consistency); Skills column uses `skill_verification` chips (green-outlined confirmed, gray-outlined unconfirmed); Profile Consistency splits prose into "• sentence" bullets; footer row shows "FULL TECHNICAL EVIDENCE BELOW" + repo/commit count
+- Standalone divider removed (it's inside the card now)
+- Section numbering: gray "01"–"06" above each section title via `<SectionNum>` component
+- SkillEvidence: outlined chips only (no filled green background)
+- ProjectMatches: circular icon badge (color + "20" fill), claim text bold, sub-text gray
+- ActivityPatterns: value bold + large, label below in small caps gray
+- InterviewQuestions: "RE:" context in uppercase small caps
+- RepoTable: renamed to "Repository Reference", added ROLE column (Owner/Fork from `is_fork`), monospace repo name links, muted flag badges
+- Limitations: amber box with bold "Limitations." prefix
+- Feedback: centered, minimal, no indigo
+- Error state: black button, no indigo
+
+**`StatusPoll.jsx`**: replaced indigo dot/spinner/label with `#0f172a`/`#cbd5e1` ring, green done dot
+
+**`Auth.jsx`**: black title + button style, clean 1px border card
+
+**`HistoryPage.jsx`**: added `Navbar` component (same pattern), replaced indigo links, GitHub SVG icon per row
+
+**`ReportPage.jsx`**: navbar with VerifAI logo + "Run your own verification →" link, background `#f8fafc`, no indigo
+
 ### Session 19 — 2026-06-19
 
 **Notebook import scanning — fixes false negatives where skill evidence lived only inside `.ipynb` files**

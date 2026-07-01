@@ -3,6 +3,9 @@ import { useParams } from "react-router-dom";
 import { getResults } from "../api";
 import ReportView from "./ReportView.jsx";
 
+const PRIMARY = "#0f172a";
+const BORDER = "#e2e8f0";
+
 export default function ReportPage() {
   const { runId } = useParams();
   const [state, setState] = useState(null);
@@ -19,10 +22,14 @@ export default function ReportPage() {
 
   if (error) {
     return (
-      <div style={{ textAlign: "center", padding: "60px", fontFamily: "system-ui" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-        <h2 style={{ color: "#111", marginBottom: 16 }}>{error}</h2>
-        <a href="/" style={{ color: "#4f46e5", fontSize: 15 }}>
+      <div style={{
+        textAlign: "center",
+        padding: "60px 24px",
+        fontFamily: "system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif",
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>⚠</div>
+        <h2 style={{ color: PRIMARY, marginBottom: 16, letterSpacing: "-0.02em" }}>{error}</h2>
+        <a href="/" style={{ color: PRIMARY, fontSize: 14, fontWeight: 600, textDecoration: "none" }}>
           Run your own verification →
         </a>
       </div>
@@ -31,28 +38,42 @@ export default function ReportPage() {
 
   if (!state) {
     return (
-      <div style={{ textAlign: "center", padding: "60px", color: "#6b7280", fontFamily: "system-ui" }}>
+      <div style={{
+        textAlign: "center",
+        padding: "60px",
+        color: "#64748b",
+        fontFamily: "system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif",
+      }}>
         Loading report…
       </div>
     );
   }
 
   return (
-    <div>
-      <div style={{ minHeight: "100vh", padding: "2rem 1rem", background: "#f9fafb" }}>
-        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-          <a href="/" style={{ textDecoration: "none" }}>
-            <span style={{ fontSize: 24, fontWeight: 800, color: "#6366f1", letterSpacing: -0.5 }}>
-              VerifAI
-            </span>
-          </a>
-        </div>
+    <div style={{
+      minHeight: "100vh",
+      background: "#f8fafc",
+      fontFamily: "system-ui, -apple-system, 'Inter', 'Segoe UI', sans-serif",
+    }}>
+      <nav style={{
+        background: "#fff",
+        borderBottom: `1px solid ${BORDER}`,
+        padding: "0 24px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        height: 56,
+      }}>
+        <a href="/" style={{ fontSize: 17, fontWeight: 800, color: PRIMARY, textDecoration: "none", letterSpacing: "-0.03em" }}>
+          VerifAI
+        </a>
+        <a href="/" style={{ fontSize: 14, color: "#64748b", textDecoration: "none" }}>
+          Run your own verification →
+        </a>
+      </nav>
+
+      <div style={{ padding: "32px 24px" }}>
         <ReportView state={{ ...state, run_id: runId }} onReset={() => { window.location.href = "/verify"; }} />
-        <div style={{ textAlign: "center", padding: "24px", color: "#9ca3af", fontSize: 13 }}>
-          <a href="/" style={{ color: "#4f46e5" }}>
-            Run your own verification with VerifAI →
-          </a>
-        </div>
       </div>
     </div>
   );
