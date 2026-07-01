@@ -1,13 +1,18 @@
 """LangGraph orchestration for the VerifAI pipeline.
 
-Nodes run in order: parse_resume → scrape_github → detect_ai_code →
-verify_coherence → generate_report.
+Nodes run in order: parse_resume → scrape_github → parallel_agents →
+generate_report.
 
-If github_data is None after Agent 2, Agents 3 and 4 are skipped via a
+parallel_agents runs detect_ai_code and verify_coherence simultaneously
+using ThreadPoolExecutor — both only need github_data and resume_claims,
+which are set after Agent 2 finishes.
+
+If github_data is None after Agent 2, parallel_agents is skipped via a
 conditional edge and the graph jumps straight to generate_report.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from langgraph.graph import END, StateGraph
 
@@ -38,10 +43,48 @@ def _wrap(agent_fn, agent_name: str):
     return node
 
 
+def run_parallel_agents(state: PipelineState) -> PipelineState:
+    """Run detect_ai_code and verify_coherence concurrently.
+
+    Each agent receives a shallow copy with independent errors/skipped lists so
+    concurrent appends don't race. After both finish, their outputs are merged
+    back into the main state.
+    """
+    state["current_agent"] = "parallel_agents"
+    logger.info(">>> Starting parallel_agents (ai_code_detector + coherence_verifier)")
+
+    # Build isolated copies — new lists prevent concurrent-append races
+    original_errors = list(state.get("errors", []))
+    original_skipped = list(state.get("skipped", []))
+
+    ai_input: PipelineState = {**state, "errors": list(original_errors), "skipped": list(original_skipped)}
+    coherence_input: PipelineState = {**state, "errors": list(original_errors), "skipped": list(original_skipped)}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        ai_future = executor.submit(detect_ai_code, ai_input)
+        coherence_future = executor.submit(verify_coherence, coherence_input)
+        ai_state = ai_future.result()
+        coherence_state = coherence_future.result()
+
+    logger.info(">>> Finished parallel_agents")
+
+    # Merge outputs into main state
+    state["ai_detection"] = ai_state.get("ai_detection")
+    state["skill_verification"] = coherence_state.get("skill_verification")
+    state["project_matches"] = coherence_state.get("project_matches")
+    state["coherence_report"] = coherence_state.get("coherence_report")
+
+    # Accumulate new errors/skipped from both agents (slice off the originals they started with)
+    state["errors"] = original_errors + ai_state["errors"][len(original_errors):] + coherence_state["errors"][len(original_errors):]
+    state["skipped"] = original_skipped + ai_state["skipped"][len(original_skipped):] + coherence_state["skipped"][len(original_skipped):]
+
+    return state
+
+
 def _after_github(state: PipelineState) -> str:
     if state.get("github_data") is None:
         return "generate_report"
-    return "detect_ai_code"
+    return "parallel_agents"
 
 
 def build_graph() -> StateGraph:
@@ -49,18 +92,16 @@ def build_graph() -> StateGraph:
 
     graph.add_node("parse_resume", _wrap(parse_resume, "resume_parser"))
     graph.add_node("scrape_github", _wrap(scrape_github, "github_scraper"))
-    graph.add_node("detect_ai_code", _wrap(detect_ai_code, "ai_code_detector"))
-    graph.add_node("verify_coherence", _wrap(verify_coherence, "coherence_verifier"))
+    graph.add_node("parallel_agents", _wrap(run_parallel_agents, "parallel_agents"))
     graph.add_node("generate_report", _wrap(generate_report, "report_generator"))
 
     graph.set_entry_point("parse_resume")
     graph.add_edge("parse_resume", "scrape_github")
     graph.add_conditional_edges("scrape_github", _after_github, {
-        "detect_ai_code": "detect_ai_code",
+        "parallel_agents": "parallel_agents",
         "generate_report": "generate_report",
     })
-    graph.add_edge("detect_ai_code", "verify_coherence")
-    graph.add_edge("verify_coherence", "generate_report")
+    graph.add_edge("parallel_agents", "generate_report")
     graph.add_edge("generate_report", END)
 
     return graph

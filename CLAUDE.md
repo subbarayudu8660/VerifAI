@@ -309,6 +309,24 @@ Allowed origins:
 
 ## Session Log
 
+### Session 21 — 2026-07-01
+
+**Agents 3 & 4 now run in parallel — saves ~15–20s per verification**
+
+`pipeline.py`:
+- Removed separate `detect_ai_code` and `verify_coherence` nodes.
+- Added `run_parallel_agents(state)` — uses `ThreadPoolExecutor(max_workers=2)` to run both agents concurrently. ThreadPoolExecutor chosen over `asyncio.run()` to avoid conflicting with FastAPI's existing event loop.
+- Each agent gets a shallow copy of state with independent `errors`/`skipped` lists (`list(original)`) so concurrent `.append()` calls don't race.
+- After both futures complete, merge: `ai_detection` from ai agent, `skill_verification`/`project_matches`/`coherence_report` from coherence agent. New errors/skipped accumulated by slicing off the originals (`agent_state["errors"][len(original_errors):]`).
+- `run_parallel_agents` is wrapped with `_wrap("parallel_agents")` for consistent error logging and fallback.
+- `_after_github` now routes to `"parallel_agents"` instead of `"detect_ai_code"`.
+- Graph edges: `parse_resume → scrape_github → parallel_agents → generate_report`.
+- `current_agent` is explicitly set to `"parallel_agents"` at the start of the function (the individual agent copies set it on their own copies, not the main state).
+
+`frontend/src/components/StatusPoll.jsx`:
+- `STEPS` array: `["resume_parser", "github_scraper", "parallel_agents", "report_generator"]` — two steps collapsed to one.
+- `AGENT_LABELS`: `parallel_agents` → `"Analyzing code & verifying claims…"`.
+
 ### Session 20 — 2026-07-01
 
 **Full Lovable-style redesign — visual only, no logic changes**

@@ -9,13 +9,12 @@ const AGENT_LABELS = {
   queued: "Starting…",
   resume_parser: "Parsing resume…",
   github_scraper: "Scraping GitHub…",
-  ai_code_detector: "Analyzing code patterns…",
-  coherence_verifier: "Verifying resume claims…",
+  parallel_agents: "Analyzing code & verifying claims…",
   report_generator: "Generating report…",
   complete: "Complete",
 };
 
-const STEPS = ["resume_parser", "github_scraper", "ai_code_detector", "coherence_verifier", "report_generator"];
+const STEPS = ["resume_parser", "github_scraper", "parallel_agents", "report_generator"];
 
 function isDone(current, step) {
   const ci = STEPS.indexOf(current);
